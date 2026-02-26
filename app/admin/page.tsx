@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { collection, getDocs, doc, getDoc, query, orderBy, addDoc, deleteDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, query, orderBy, addDoc, deleteDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -71,19 +71,64 @@ export default function AdminPage() {
     }
   };
 
+  // 🔥 核心修改：前端直傳 Google Drive 邏輯
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsUploading(true);
+    
     const formData = new FormData(e.currentTarget);
+    const file = formData.get('file') as File;
+    const subject = formData.get('subject') as string;
+    const title = formData.get('title') as string;
+
+    if (!file || !subject || !title) {
+      alert("請填寫完整資訊！");
+      setIsUploading(false);
+      return;
+    }
+
     try {
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      if (res.ok) {
-        alert("上傳成功！");
-        fetchAdminData();
-        (e.target as HTMLFormElement).reset();
-      }
-    } catch (error) {
-      console.error("上傳錯誤", error);
+      // 1. 取得 Access Token (從我們的輕量 API)
+      const tokenRes = await fetch('/api/auth/google-token');
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok) throw new Error("取得 Google 授權失敗");
+
+      // 2. 準備 Google Drive Multipart 上傳內容
+      const metadata = {
+        name: file.name,
+        parents: [process.env.NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID],
+      };
+
+      const uploadFormData = new FormData();
+      uploadFormData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      uploadFormData.append('file', file);
+
+      // 3. 直接對 Google API 發送請求 (不受 Vercel 4.5MB 限制)
+      const driveRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        body: uploadFormData,
+      });
+
+      const driveData = await driveRes.json();
+      if (!driveRes.ok) throw new Error(driveData.error?.message || 'Drive 上傳失敗');
+
+      // 4. 上傳成功後，將檔案 ID 寫回 Firestore
+      await addDoc(collection(db, "solutions"), {
+        subject,
+        title,
+        drive_file_id: driveData.id,
+        view_count: 0,
+        created_at: serverTimestamp()
+      });
+
+      alert("✅ 檔案直傳 Google Drive 成功！");
+      fetchAdminData();
+      (e.target as HTMLFormElement).reset();
+
+    } catch (error: any) {
+      console.error("上傳過程錯誤:", error);
+      alert(`❌ 錯誤: ${error.message}`);
     } finally {
       setIsUploading(false);
     }
