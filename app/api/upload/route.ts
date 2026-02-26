@@ -4,6 +4,15 @@ import { Readable } from 'stream';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
+// 無敵金鑰解析器：處理各種 Vercel 環境變數貼錯的情況
+const formatPrivateKey = (key: string | undefined) => {
+  if (!key) return undefined;
+  return key
+    .replace(/\\n/g, '\n') // 替換被跳脫的換行符號
+    .replace(/^"|"$/g, '') // 移除頭尾不小心貼上的雙引號
+    .split(String.raw`\n`).join('\n'); // 處理更深層的跳脫字元
+};
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -20,10 +29,18 @@ export async function POST(request: Request) {
     stream.push(buffer);
     stream.push(null);
 
+    // 取得並清洗私鑰
+    const formattedPrivateKey = formatPrivateKey(process.env.GOOGLE_PRIVATE_KEY);
+
+    if (!formattedPrivateKey || !formattedPrivateKey.includes('BEGIN PRIVATE KEY')) {
+      console.error("私鑰格式嚴重錯誤，請檢查 Vercel 設定！");
+      return NextResponse.json({ error: '伺服器金鑰設定錯誤' }, { status: 500 });
+    }
+
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        private_key: formattedPrivateKey,
       },
       scopes: ['https://www.googleapis.com/auth/drive.file'],
     });
