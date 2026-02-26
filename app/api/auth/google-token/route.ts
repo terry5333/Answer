@@ -15,15 +15,10 @@ export async function GET() {
     });
 
     const data = await res.json();
-    
-    if (!res.ok) {
-      console.error("Google Token API 回傳錯誤:", data);
-      return NextResponse.json({ error: data.error_description || '無法取得 Token' }, { status: res.status });
-    }
+    if (!res.ok) return NextResponse.json({ error: data.error_description }, { status: res.status });
 
     return NextResponse.json({ access_token: data.access_token });
   } catch (error: any) {
-    console.error("Token API 系統錯誤:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
