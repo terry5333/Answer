@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { collection, getDocs, doc, getDoc, query, orderBy, addDoc, deleteDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { 
+  collection, getDocs, doc, getDoc, query, orderBy, 
+  addDoc, deleteDoc, setDoc, serverTimestamp 
+} from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -27,7 +30,8 @@ export default function AdminPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) return router.push("/login");
-      const userSnap = await getDoc(doc(db, "users", user.uid));
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
       if (userSnap.exists()) {
         const data = userSnap.data();
         if (data.role !== "teacher") {
@@ -71,7 +75,7 @@ export default function AdminPage() {
     }
   };
 
-  // 🔥 核心修改：前端直傳 Google Drive 邏輯
+  // 🔥 核心修正：前端直傳 Google Drive 且存入指定資料夾
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsUploading(true);
@@ -80,30 +84,31 @@ export default function AdminPage() {
     const file = formData.get('file') as File;
     const subject = formData.get('subject') as string;
     const title = formData.get('title') as string;
+    const folderId = process.env.NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID;
 
-    if (!file || !subject || !title) {
-      alert("請填寫完整資訊！");
+    if (!file || !subject || !title || !folderId) {
+      alert("請填寫完整資訊並確認資料夾 ID 已設定！");
       setIsUploading(false);
       return;
     }
 
     try {
-      // 1. 取得 Access Token (從我們的輕量 API)
+      // 1. 取得 Access Token
       const tokenRes = await fetch('/api/auth/google-token');
       const tokenData = await tokenRes.json();
       if (!tokenRes.ok) throw new Error("取得 Google 授權失敗");
 
-      // 2. 準備 Google Drive Multipart 上傳內容
+      // 2. 準備 Metadata (關鍵：parents 必須是陣列)
       const metadata = {
         name: file.name,
-        parents: [process.env.NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID],
+        parents: [folderId], 
       };
 
       const uploadFormData = new FormData();
       uploadFormData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
       uploadFormData.append('file', file);
 
-      // 3. 直接對 Google API 發送請求 (不受 Vercel 4.5MB 限制)
+      // 3. 直接對 Google API 上傳 (繞過 Vercel 限制)
       const driveRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
         method: 'POST',
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
@@ -113,7 +118,7 @@ export default function AdminPage() {
       const driveData = await driveRes.json();
       if (!driveRes.ok) throw new Error(driveData.error?.message || 'Drive 上傳失敗');
 
-      // 4. 上傳成功後，將檔案 ID 寫回 Firestore
+      // 4. 將成功的檔案 ID 寫入 Firestore
       await addDoc(collection(db, "solutions"), {
         subject,
         title,
@@ -122,13 +127,12 @@ export default function AdminPage() {
         created_at: serverTimestamp()
       });
 
-      alert("✅ 檔案直傳 Google Drive 成功！");
+      alert("✅ 檔案已成功存入指定資料夾！");
       fetchAdminData();
       (e.target as HTMLFormElement).reset();
 
     } catch (error: any) {
-      console.error("上傳過程錯誤:", error);
-      alert(`❌ 錯誤: ${error.message}`);
+      alert(`❌ 失敗: ${error.message}`);
     } finally {
       setIsUploading(false);
     }
@@ -163,69 +167,70 @@ export default function AdminPage() {
   }).filter(data => data.value > 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 p-8 pb-20 relative">
+    <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 p-8 pb-20 relative font-sans">
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
         
-        {/* 頂部標題與登出 */}
+        {/* 頂部導覽列 */}
         <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-6 px-10 shadow-lg flex justify-between items-center">
           <h1 className="text-3xl font-bold text-indigo-900">👨‍🏫 老師管理中控台</h1>
           <div className="flex items-center gap-6">
-            <span className="text-indigo-700 font-bold text-lg">{teacherData?.name || teacherData?.email?.split('@')[0]} 老師，您好</span>
+            <span className="text-indigo-700 font-bold text-lg">{teacherData?.name || "老師"}，您好</span>
             <button onClick={handleLogout} className="bg-red-400 hover:bg-red-500 text-white px-5 py-2 rounded-[2rem] font-bold shadow-md transition-all transform hover:-translate-y-0.5">
               登出
             </button>
           </div>
         </div>
 
-        {/* 懸浮導覽列 */}
+        {/* 頁籤切換 */}
         <div className="bg-white/60 backdrop-blur-xl border border-white rounded-full p-3 px-6 shadow-lg flex justify-center gap-4 sticky top-4 z-40">
-          <button onClick={() => setActiveTab("solutions")} className={`px-6 py-3 rounded-full font-bold transition-all ${activeTab === "solutions" ? "bg-indigo-600 text-white shadow-md" : "text-gray-600 hover:bg-white/50"}`}>📘 科目與解答</button>
-          <button onClick={() => setActiveTab("students")} className={`px-6 py-3 rounded-full font-bold transition-all ${activeTab === "students" ? "bg-teal-600 text-white shadow-md" : "text-gray-600 hover:bg-white/50"}`}>👥 學生管理</button>
-          <button onClick={() => setActiveTab("reports")} className={`px-6 py-3 rounded-full font-bold transition-all ${activeTab === "reports" ? "bg-orange-500 text-white shadow-md" : "text-gray-600 hover:bg-white/50"}`}>📊 報表分析</button>
+          <button onClick={() => setActiveTab("solutions")} className={`px-6 py-3 rounded-full font-bold transition-all ${activeTab === "solutions" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-white/50"}`}>📘 科目與解答</button>
+          <button onClick={() => setActiveTab("students")} className={`px-6 py-3 rounded-full font-bold transition-all ${activeTab === "students" ? "bg-teal-600 text-white" : "text-gray-600 hover:bg-white/50"}`}>👥 學生管理</button>
+          <button onClick={() => setActiveTab("reports")} className={`px-6 py-3 rounded-full font-bold transition-all ${activeTab === "reports" ? "bg-orange-500 text-white" : "text-gray-600 hover:bg-white/50"}`}>📊 報表分析</button>
         </div>
 
-        {/* 區塊 1: 科目與解答管理 */}
         {activeTab === "solutions" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4">
-            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg h-fit">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* 科目設定 */}
+            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg">
               <h2 className="text-xl font-bold text-gray-800 mb-6">🏷️ 科目設定</h2>
               <div className="flex gap-2 mb-6">
-                <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新增科目 (例: 歷史)" className="flex-1 bg-white/50 border border-gray-300 rounded-[2rem] px-4 py-2 focus:outline-none" />
-                <button onClick={handleAddSubject} className="bg-indigo-600 text-white px-4 py-2 rounded-[2rem] font-bold">+</button>
+                <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新增科目" className="flex-1 bg-white/50 border border-gray-300 rounded-[2rem] px-4 py-2" />
+                <button onClick={handleAddSubject} className="bg-indigo-600 text-white px-4 py-2 rounded-[2rem]">+</button>
               </div>
               <div className="space-y-2">
                 {subjects.map(sub => (
-                  <div key={sub.id} className="flex justify-between items-center bg-white/50 rounded-[1.5rem] px-4 py-2">
-                    <span className="font-bold text-gray-700">{sub.name}</span>
-                    <button onClick={() => handleDeleteSubject(sub.id)} className="text-red-500 hover:text-red-700 font-bold">✕</button>
+                  <div key={sub.id} className="flex justify-between items-center bg-white/50 rounded-[1.5rem] px-4 py-2 font-bold text-gray-700">
+                    {sub.name}
+                    <button onClick={() => handleDeleteSubject(sub.id)} className="text-red-500">✕</button>
                   </div>
                 ))}
               </div>
             </div>
 
+            {/* 上傳與列表 */}
             <div className="lg:col-span-2 flex flex-col gap-8">
               <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg">
-                <h2 className="text-xl font-bold text-gray-800 mb-6">📤 上傳新解答</h2>
-                <form onSubmit={handleUpload} className="flex flex-col md:flex-row gap-4 items-center">
-                  <select name="subject" required className="bg-white/50 border border-gray-300 rounded-[2rem] px-5 py-3 focus:outline-none w-full md:w-auto">
+                <h2 className="text-xl font-bold text-gray-800 mb-6">📤 上傳新解答 (不受 4.5MB 限制)</h2>
+                <form onSubmit={handleUpload} className="flex flex-col md:flex-row gap-4">
+                  <select name="subject" required className="bg-white/50 border border-gray-300 rounded-[2rem] px-5 py-3">
                     <option value="">選擇科目</option>
                     {subjects.map(sub => <option key={sub.id} value={sub.name}>{sub.name}</option>)}
                   </select>
-                  <input name="title" required placeholder="標題 (例: 1-1 習作)" className="flex-1 bg-white/50 border border-gray-300 rounded-[2rem] px-5 py-3 focus:outline-none w-full" />
-                  <input type="file" name="file" required className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 text-gray-600 w-full md:w-auto" />
-                  <button disabled={isUploading || subjects.length === 0} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-[3rem] shadow-lg disabled:opacity-50">
+                  <input name="title" required placeholder="標題" className="flex-1 bg-white/50 border border-gray-300 rounded-[2rem] px-5 py-3" />
+                  <input type="file" name="file" required className="text-sm text-gray-600 file:bg-indigo-50 file:rounded-full file:border-0 file:px-4 file:py-2" />
+                  <button disabled={isUploading} className="bg-indigo-600 text-white font-bold py-3 px-6 rounded-[3rem] disabled:opacity-50">
                     {isUploading ? "上傳中..." : "上傳"}
                   </button>
                 </form>
               </div>
-
+              
               <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg">
-                <h2 className="text-xl font-bold text-gray-800 mb-4">📚 已上傳解答管理</h2>
+                <h2 className="text-xl font-bold text-gray-800 mb-4">📚 已上傳解答</h2>
                 <div className="space-y-3">
                   {solutions.map((sol) => (
                     <div key={sol.id} className="flex justify-between items-center bg-white/50 rounded-[2rem] px-6 py-4">
-                      <span className="font-bold text-gray-700"><span className="text-indigo-500 mr-2">[{sol.subject}]</span> {sol.title}</span>
-                      <button onClick={() => handleDeleteSolution(sol.id)} className="bg-red-100 text-red-600 font-bold px-4 py-1 rounded-full hover:bg-red-200 transition">刪除</button>
+                      <span className="font-bold text-gray-700">[{sol.subject}] {sol.title}</span>
+                      <button onClick={() => handleDeleteSolution(sol.id)} className="text-red-600 bg-red-50 px-4 py-1 rounded-full font-bold">刪除</button>
                     </div>
                   ))}
                 </div>
@@ -234,25 +239,22 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* 區塊 2: 學生管理 */}
         {activeTab === "students" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4">
-            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg h-fit">
-              <h2 className="text-xl font-bold text-gray-800 mb-6">📝 資料管理跟填寫</h2>
-              <p className="text-sm text-gray-500 mb-4">設定座號與姓名，學生登入時才能正確綁定。</p>
-              <div className="flex gap-2 mb-6">
-                <input type="number" value={newStudent.seat} onChange={e => setNewStudent({...newStudent, seat: e.target.value})} placeholder="座號" className="w-24 bg-white/50 border border-gray-300 rounded-[2rem] px-4 py-2 focus:outline-none" />
-                <input value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} placeholder="學生姓名" className="flex-1 bg-white/50 border border-gray-300 rounded-[2rem] px-4 py-2 focus:outline-none" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg">
+              <h2 className="text-xl font-bold text-gray-800 mb-6">📝 學生資料設定</h2>
+              <div className="flex gap-2">
+                <input type="number" value={newStudent.seat} onChange={e => setNewStudent({...newStudent, seat: e.target.value})} placeholder="座號" className="w-24 bg-white/50 border border-gray-300 rounded-[2rem] px-4 py-2" />
+                <input value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} placeholder="姓名" className="flex-1 bg-white/50 border border-gray-300 rounded-[2rem] px-4 py-2" />
                 <button onClick={handleAddStudent} className="bg-teal-600 text-white px-6 py-2 rounded-[2rem] font-bold">新增</button>
               </div>
             </div>
-
             <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg">
-              <h2 className="text-xl font-bold text-gray-800 mb-6">🧑‍🎓 學生名單 (點擊查看紀錄)</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-6">🧑‍🎓 學生名單</h2>
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 {students.map(student => (
-                  <button key={student.id} onClick={() => setSelectedStudent(student)} className="bg-white/50 hover:bg-white/80 border border-gray-200 rounded-[2rem] p-4 text-center transition-all shadow-sm transform hover:-translate-y-1">
-                    <div className="text-teal-600 font-bold text-lg">{student.seat_number} 號</div>
+                  <button key={student.id} onClick={() => setSelectedStudent(student)} className="bg-white/50 rounded-[2rem] p-4 text-center shadow-sm">
+                    <div className="text-teal-600 font-bold">{student.seat_number} 號</div>
                     <div className="text-gray-700 font-medium">{student.name}</div>
                   </button>
                 ))}
@@ -261,67 +263,51 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* 區塊 3: 報表分析 */}
         {activeTab === "reports" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4">
-            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg flex flex-col items-center">
-              <h2 className="text-xl font-bold text-gray-800 mb-2">📊 科目點擊率分佈</h2>
-              {subjectChartData.length > 0 ? (
-                <div className="w-full h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">
-                        {subjectChartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ borderRadius: '1rem', border: 'none', background: 'rgba(255,255,255,0.9)' }} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-gray-400">尚無足夠數據</div>
-              )}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg h-96 flex flex-col items-center">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">📊 科目點擊率</h2>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" paddingAngle={5}>
+                    {subjectChartData.map((entry, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-
-            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg">
-              <h2 className="text-xl font-bold text-gray-800 mb-6">🔥 單題解答點擊排行榜</h2>
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                {[...solutions].sort((a,b) => (b.view_count || 0) - (a.view_count || 0)).map((sol, index) => (
-                  <div key={sol.id} className="flex justify-between items-center bg-white/50 rounded-[2rem] px-6 py-4">
-                    <span className="font-bold text-gray-700"><span className="text-orange-500 mr-2">#{index + 1}</span> [{sol.subject}] {sol.title}</span>
-                    <span className="bg-orange-100 text-orange-600 font-bold px-4 py-1 rounded-full">{sol.view_count || 0} 次</span>
-                  </div>
-                ))}
-              </div>
+            <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 shadow-lg overflow-y-auto">
+              <h2 className="text-xl font-bold text-gray-800 mb-6">🔥 解答點擊排行</h2>
+              {solutions.sort((a,b) => (b.view_count||0)-(a.view_count||0)).map((sol, idx) => (
+                <div key={sol.id} className="flex justify-between p-4 bg-white/50 rounded-[1.5rem] mb-2 font-bold text-gray-700">
+                  <span>#{idx+1} {sol.title}</span>
+                  <span className="text-orange-500">{sol.view_count || 0} 次</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* 學生個人紀錄 Modal */}
+      {/* 觀看紀錄 Modal */}
       {selectedStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-md p-4">
-          <div className="bg-white/80 backdrop-blur-2xl border border-white/50 rounded-[3rem] shadow-2xl p-8 w-full max-w-2xl max-h-[80vh] flex flex-col animate-in zoom-in">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-[3rem] p-8 w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold text-gray-800">
-                {selectedStudent.seat_number}號 {selectedStudent.name} - 觀看紀錄
-              </h3>
-              <button onClick={() => setSelectedStudent(null)} className="text-gray-500 hover:text-red-500 font-bold text-xl">✕</button>
+              <h3 className="text-2xl font-bold text-gray-800">{selectedStudent.seat_number}號 {selectedStudent.name} 觀看紀錄</h3>
+              <button onClick={() => setSelectedStudent(null)} className="text-gray-500 text-2xl">✕</button>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-              {getStudentLogs(selectedStudent.seat_number).length > 0 ? (
-                getStudentLogs(selectedStudent.seat_number).map(log => {
-                  const sol = solutions.find(s => s.id === log.solution_id);
-                  return (
-                    <div key={log.id} className="bg-white/60 rounded-[1.5rem] px-6 py-4 flex justify-between items-center">
-                      <span className="font-medium text-gray-700">{sol ? `[${sol.subject}] ${sol.title}` : log.solution_id}</span>
-                      <span className="text-sm text-gray-500">{log.viewed_at ? new Date(log.viewed_at.toDate()).toLocaleString() : "剛剛"}</span>
-                    </div>
-                  )
-                })
-              ) : (
-                <div className="text-center text-gray-400 py-10">尚無觀看紀錄</div>
-              )}
+            <div className="overflow-y-auto flex-1 space-y-2">
+              {getStudentLogs(selectedStudent.seat_number).map(log => {
+                const sol = solutions.find(s => s.id === log.solution_id);
+                return (
+                  <div key={log.id} className="bg-white/60 rounded-[1.5rem] px-6 py-4 flex justify-between items-center">
+                    <span className="font-medium text-gray-700">{sol ? `[${sol.subject}] ${sol.title}` : "未知解答"}</span>
+                    <span className="text-sm text-gray-500">{log.viewed_at ? new Date(log.viewed_at.toDate()).toLocaleString() : "剛才"}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
