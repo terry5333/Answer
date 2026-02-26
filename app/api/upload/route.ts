@@ -15,17 +15,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
     }
 
-    // 1. 處理檔案轉換為 Stream (Google API 需求格式)
     const buffer = Buffer.from(await file.arrayBuffer());
     const stream = new Readable();
     stream.push(buffer);
     stream.push(null);
 
-    // 2. 初始化 Google Drive API (使用 Vercel 環境變數)
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        // 處理 Vercel 傳遞私鑰時可能發生的換行符號問題
         private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       },
       scopes: ['https://www.googleapis.com/auth/drive.file'],
@@ -33,7 +30,6 @@ export async function POST(request: Request) {
 
     const drive = google.drive({ version: 'v3', auth });
 
-    // 3. 上傳檔案至指定資料夾
     const driveResponse = await drive.files.create({
       requestBody: {
         name: file.name,
@@ -48,7 +44,6 @@ export async function POST(request: Request) {
 
     const driveFileId = driveResponse.data.id;
 
-    // 4. 將資料與 Drive ID 寫入 Firestore 的 solutions 表
     await addDoc(collection(db, "solutions"), {
       subject,
       title,
@@ -59,8 +54,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, fileId: driveFileId });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('上傳處理發生錯誤:', error);
-    return NextResponse.json({ error: '內部伺服器錯誤' }, { status: 500 });
+    return NextResponse.json({ error: error.message || '內部伺服器錯誤' }, { status: 500 });
   }
 }
