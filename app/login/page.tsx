@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { auth, db, provider } from "@/lib/firebase"; // ⚠️ 確保你的 firebase.ts 有匯出 provider
+import { auth, db, provider } from "@/lib/firebase"; 
 import { signInWithPopup } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
@@ -10,12 +10,11 @@ export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   
-  // 處理首次登入需要綁定座號的狀態
   const [step, setStep] = useState<"login" | "bind">("login");
   const [seatNumber, setSeatNumber] = useState("");
   const [tempUser, setTempUser] = useState<any>(null);
 
-  // 🚀 核心邏輯：Google 登入與身分判斷 (包含自動修復舊資料)
+  // 🚀 核心邏輯：Google 登入與強制防呆檢核
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
@@ -28,27 +27,45 @@ export default function LoginPage() {
       if (userSnap.exists()) {
         const userData = userSnap.data();
         
-        // 判斷是學生
-        if (userData.role === "student" && userData.seat_number) {
-          // 💡 自動修復機制：確保學生的 Google UID 有寫回 students 名單表
-          try {
-            const studentRef = doc(db, "students", String(userData.seat_number));
-            await updateDoc(studentRef, {
-              bound_uid: user.uid,
-              bound_email: user.email
-            });
-          } catch (err) {
-            console.log("修復綁定狀態時發生小錯誤，但不影響登入", err);
-          }
-          
-          router.push("/dashboard");
-        } 
-        // 判斷是老師
-        else if (userData.role === "teacher") {
+        // 如果是老師，直接放行
+        if (userData.role === "teacher") {
           router.push("/admin");
+          return;
+        }
+
+        if (userData.role === "student") {
+          // 💡 終極防呆：檢查舊學生是否有「完整的座號紀錄」
+          if (userData.seat_number) {
+            const studentRef = doc(db, "students", String(userData.seat_number));
+            const studentSnap = await getDoc(studentRef);
+
+            if (studentSnap.exists()) {
+              const studentData = studentSnap.data();
+              // 如果名單上他的 bound_uid 是空的 (以前漏掉的)，或是剛好就是他自己，幫他修復並放行
+              if (!studentData.bound_uid || studentData.bound_uid === user.uid) {
+                await updateDoc(studentRef, {
+                  bound_uid: user.uid,
+                  bound_email: user.email,
+                  photo_url: user.photoURL
+                });
+                router.push("/dashboard");
+                return;
+              }
+            }
+          }
+
+          // ⚠️ 如果走到這裡，代表：
+          // 1. 舊學生以前登入時，系統還沒有存座號的功能
+          // 2. 老師把這個座號從名單刪掉了
+          // 3. 這個座號被別的同學綁走了
+          // 結論：通通打回綁定頁面，強迫他重新綁定！
+          setTempUser(user);
+          setStep("bind");
+          setLoading(false);
+          return;
         }
       } else {
-        // 如果在 users 集合找不到資料 ➔ 代表是新生首次登入，進入綁定步驟
+        // 完全沒登入過的新生
         setTempUser(user);
         setStep("bind");
         setLoading(false);
@@ -60,7 +77,7 @@ export default function LoginPage() {
     }
   };
 
-  // 🚀 核心邏輯：首次註冊綁定座號 (防呆機制)
+  // 🚀 核心邏輯：註冊並綁定座號
   const handleBindStudent = async () => {
     if (!seatNumber || !tempUser) return alert("請輸入座號！");
     setLoading(true);
@@ -69,7 +86,6 @@ export default function LoginPage() {
       const studentRef = doc(db, "students", seatNumber);
       const studentSnap = await getDoc(studentRef);
 
-      // 檢查 1：座號是否存在
       if (!studentSnap.exists()) {
         setLoading(false);
         return alert("找不到此座號，請聯絡老師新增名單！");
@@ -77,19 +93,20 @@ export default function LoginPage() {
 
       const studentData = studentSnap.data();
 
-      // 檢查 2：座號是否已經被「別人」綁定了
+      // 防呆：確認座號沒有被別人綁走
       if (studentData.bound_uid && studentData.bound_uid !== tempUser.uid) {
         setLoading(false);
         return alert("❌ 此座號已被其他 Google 帳號綁定！如果您選錯了，請聯絡老師。");
       }
 
-      // 驗證通過，寫入綁定資訊到 students 集合
+      // 寫入綁定資訊到 students 集合 (順便存入大頭貼)
       await updateDoc(studentRef, {
         bound_uid: tempUser.uid,
-        bound_email: tempUser.email
+        bound_email: tempUser.email,
+        photo_url: tempUser.photoURL
       });
 
-      // 建立使用者的權限檔案 (users 集合)
+      // 建立使用者的權限檔案 (覆蓋舊的殘缺檔案)
       await setDoc(doc(db, "users", tempUser.uid), {
         role: "student",
         seat_number: Number(seatNumber),
@@ -130,12 +147,12 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* 步驟二：新生綁定座號 */}
+        {/* 步驟二：強制綁定座號 */}
         {step === "bind" && (
           <div className="w-full flex flex-col gap-5 animate-in slide-in-from-right">
             <div className="text-center mb-2">
               <div className="text-indigo-600 font-bold mb-1">歡迎，{tempUser?.displayName || "同學"}！</div>
-              <div className="text-sm text-gray-500">系統未找到您的紀錄，請先綁定您的座號。</div>
+              <div className="text-sm text-gray-500">系統未找到您的完整紀錄，請綁定座號。</div>
             </div>
 
             <input 
