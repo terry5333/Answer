@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { 
-  collection, getDocs, doc, getDoc, writeBatch, 
-  increment, serverTimestamp 
-} from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, writeBatch, increment, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { Turnstile } from "@marsidev/react-turnstile"; 
@@ -16,8 +13,8 @@ export default function DashboardPage() {
   const [userData, setUserData] = useState<any>(null);
   const [viewingPreviewUrl, setViewingPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
   const [isVerified, setIsVerified] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -25,11 +22,19 @@ export default function DashboardPage() {
         router.push("/login");
         return;
       }
+
+      // 🚀 核心守門邏輯：檢查 Firestore 是否有綁定資料
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        setUserData(userSnap.data());
+
+      if (!userSnap.exists() || !userSnap.data().seat_number) {
+        // ❌ 沒綁定座號，或是根本沒名單，踢出去！
+        alert("尚未完成座號綁定，請先進行綁定。");
+        router.push("/login");
+        return;
       }
+
+      setUserData(userSnap.data());
       fetchSolutions();
       setLoading(false);
     });
@@ -39,150 +44,88 @@ export default function DashboardPage() {
   const fetchSolutions = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "solutions"));
-      const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSolutions(data);
-    } catch (error) {
-      console.error("獲取解答失敗:", error);
-    }
+      setSolutions(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (e) { console.error(e); }
   };
 
   const handleViewSolution = async (solutionId: string, driveFileId: string) => {
     if (!userData) return;
-    try {
-      const batch = writeBatch(db);
-      const solutionRef = doc(db, "solutions", solutionId);
-      batch.update(solutionRef, { view_count: increment(1) });
-      const logRef = doc(collection(db, "view_logs"));
-      batch.set(logRef, {
-        student_uid: userData.uid,
-        seat_number: userData.seat_number,
-        solution_id: solutionId,
-        viewed_at: serverTimestamp()
-      });
-      await batch.commit();
-      setViewingPreviewUrl(`https://drive.google.com/file/d/${driveFileId}/preview`);
-    } catch (error) {
-      console.error("紀錄失敗:", error);
-    }
+    const batch = writeBatch(db);
+    batch.update(doc(db, "solutions", solutionId), { view_count: increment(1) });
+    batch.set(doc(collection(db, "view_logs")), {
+      student_uid: auth.currentUser?.uid,
+      seat_number: userData.seat_number,
+      solution_id: solutionId,
+      viewed_at: serverTimestamp()
+    });
+    await batch.commit();
+    setViewingPreviewUrl(`https://drive.google.com/file/d/${driveFileId}/preview`);
   };
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    router.push("/login");
-  };
+  const handleLogout = async () => { await signOut(auth); router.push("/login"); };
 
-  const sortedAndFilteredSolutions = solutions
+  const sortedSolutions = solutions
     .filter(s => selectedSubject === "全部" || s.subject === selectedSubject)
     .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-TW'));
 
+  // 🔄 轉圈圈動畫
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-5">
-          <svg className="animate-spin h-12 w-12 text-teal-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <svg className="animate-spin h-12 w-12 text-teal-600" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <div className="text-teal-600 font-bold text-lg tracking-widest animate-pulse">讀取資料中...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isVerified) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-teal-50 to-white flex items-center justify-center p-4">
-        <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 md:p-12 shadow-2xl w-full max-w-md text-center animate-in fade-in zoom-in">
-          <div className="text-5xl mb-6">🛡️</div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">安全檢查</h1>
-          <p className="text-gray-500 mb-8 text-sm md:text-base">請完成驗證以解鎖解答卡片。</p>
-          <div className="flex justify-center mb-6 overflow-hidden">
-            <Turnstile siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!} onSuccess={() => setIsVerified(true)} />
-          </div>
-          <p className="text-xs text-gray-400 italic">當前身分：{userData?.seat_number} 號 {userData?.name}</p>
+          <div className="text-teal-600 font-bold animate-pulse">身分檢查中...</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100 p-4 md:p-8 relative">
-      <div className="max-w-5xl mx-auto flex flex-col gap-6 md:gap-8">
-        
-        <div className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] md:rounded-[3rem] p-5 md:p-6 px-6 md:px-10 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-lg">
-          <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
-            <h1 className="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">學生解答大廳</h1>
-          </div>
-          
-          <div className="flex w-full sm:w-auto items-center justify-between sm:justify-end gap-4">
-            <div className="flex items-center gap-2 md:gap-3 bg-white/60 px-2 py-1 pr-4 md:pr-5 rounded-full border border-indigo-100 shadow-sm flex-1 sm:flex-none justify-center">
-              <img 
-                src={auth.currentUser?.photoURL || "https://api.dicebear.com/7.x/avataaars/svg?seed=Student"} 
-                alt="Avatar" 
-                className="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 border-white shadow-sm"
-                referrerPolicy="no-referrer"
-              />
-              <div className="text-indigo-700 font-bold text-xs md:text-sm whitespace-nowrap">
-                {userData?.seat_number}號 - {userData?.name}
-              </div>
-            </div>
-            <button onClick={handleLogout} className="bg-red-400 text-white px-4 md:px-5 py-2 md:py-2.5 rounded-[2rem] font-bold text-sm md:text-base shadow-md transition-all hover:bg-red-500 active:scale-95 whitespace-nowrap">
-              登出
-            </button>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100 p-4 md:p-8">
+      {!isVerified ? (
+        <div className="min-h-[80vh] flex items-center justify-center">
+          <div className="bg-white/60 backdrop-blur-xl p-10 rounded-[3rem] text-center shadow-2xl border border-white">
+            <h1 className="text-xl font-bold mb-6">🛡️ 安全驗證</h1>
+            <Turnstile siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!} onSuccess={() => setIsVerified(true)} />
           </div>
         </div>
-
-        <div className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] md:rounded-[3rem] p-6 md:p-10 shadow-lg min-h-[60vh]">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-3">
-            <h2 className="text-lg md:text-xl font-bold text-gray-700 ml-2">選擇想查看的科目</h2>
-            <select 
-              value={selectedSubject} 
-              onChange={(e) => setSelectedSubject(e.target.value)} 
-              className="w-full sm:w-auto bg-white/70 border border-white text-gray-800 rounded-[2rem] px-5 py-3 shadow-sm outline-none cursor-pointer font-bold hover:bg-white/90 transition-all focus:ring-2 focus:ring-indigo-300"
-            >
+      ) : (
+        <div className="max-w-5xl mx-auto flex flex-col gap-6">
+          <div className="bg-white/40 backdrop-blur-xl border border-white rounded-[2.5rem] p-5 flex justify-between items-center shadow-lg">
+            <h1 className="text-lg font-bold">📖 學生解答大廳</h1>
+            <div className="flex items-center gap-3">
+              <img src={auth.currentUser?.photoURL || ""} className="w-8 h-8 rounded-full border-2 border-white" />
+              <span className="font-bold text-sm">{userData?.seat_number} 號 {userData?.name}</span>
+              <button onClick={handleLogout} className="bg-red-400 text-white px-4 py-2 rounded-full text-xs font-bold">登出</button>
+            </div>
+          </div>
+          <div className="bg-white/40 backdrop-blur-xl border border-white rounded-[2.5rem] p-6 min-h-[60vh]">
+            <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)} className="w-full sm:w-auto mb-6 bg-white/70 border border-white rounded-full px-4 py-2 font-bold outline-none">
               <option value="全部">🔍 全部科目</option>
-              {Array.from(new Set(solutions.map(s => s.subject))).map(sub => (
-                <option key={sub} value={sub}>{sub}</option>
-              ))}
+              {Array.from(new Set(solutions.map(s => s.subject))).map(sub => <option key={sub} value={sub}>{sub}</option>)}
             </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-8">
-            {sortedAndFilteredSolutions.map((sol) => (
-              <div 
-                key={sol.id} 
-                onClick={() => handleViewSolution(sol.id, sol.drive_file_id)} 
-                className="bg-white/50 hover:bg-white/80 border border-white/50 rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 cursor-pointer transition-all transform hover:-translate-y-1 md:hover:-translate-y-2 group shadow-sm flex flex-col justify-between"
-              >
-                <div>
-                  <div className="text-xs md:text-sm text-indigo-500 font-extrabold mb-2 md:mb-3 uppercase tracking-widest">{sol.subject}</div>
-                  <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-4 leading-snug">{sol.title}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sortedSolutions.map(sol => (
+                <div key={sol.id} onClick={() => handleViewSolution(sol.id, sol.drive_file_id)} className="bg-white/50 p-6 rounded-[2rem] hover:bg-white/80 transition-all cursor-pointer shadow-sm">
+                  <div className="text-xs text-indigo-500 font-bold mb-2">{sol.subject}</div>
+                  <h3 className="font-bold">{sol.title}</h3>
                 </div>
-                <div className="text-indigo-600 font-bold text-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  開啟檔案 <span>➔</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          {sortedAndFilteredSolutions.length === 0 && (
-            <div className="text-center py-20 text-gray-400 font-medium flex flex-col items-center gap-2">
-              <span className="text-4xl">📭</span>
-              <span>目前尚無解答</span>
+              ))}
             </div>
-          )}
+          </div>
         </div>
-      </div>
-
+      )}
       {viewingPreviewUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md p-2 md:p-10 animate-in fade-in">
-          <div className="bg-white/90 backdrop-blur-2xl border border-white rounded-[2rem] md:rounded-[3rem] shadow-2xl w-full h-full md:max-w-5xl md:h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95">
-            <div className="flex justify-between items-center p-4 md:p-6 bg-white/50 border-b border-gray-200/50">
-              <h3 className="text-lg md:text-xl font-bold text-gray-800 ml-2">📄 解答預覽</h3>
-              <button onClick={() => setViewingPreviewUrl(null)} className="h-10 w-10 flex items-center justify-center rounded-full bg-gray-200 hover:bg-red-500 hover:text-white transition-all font-bold text-lg">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-4">
+          <div className="bg-white rounded-[2rem] w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+            <div className="p-4 flex justify-between border-b">
+              <span className="font-bold">解答預覽</span>
+              <button onClick={() => setViewingPreviewUrl(null)} className="font-bold">✕</button>
             </div>
-            <iframe src={viewingPreviewUrl} className="w-full h-full border-0 md:rounded-b-[3rem] bg-gray-100" allow="autoplay" />
+            <iframe src={viewingPreviewUrl} className="w-full h-full" />
           </div>
         </div>
       )}
