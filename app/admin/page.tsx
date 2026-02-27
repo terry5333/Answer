@@ -13,7 +13,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recha
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCw, Upload, Users, BarChart3, Book, AlertTriangle, Edit2, Eye, Link, Unlink, Sun, Moon } from "lucide-react";
-import { useTheme } from "next-themes"; // 🚀 引入主題控制
+import { useTheme } from "next-themes";
 
 const COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#60a5fa'];
 
@@ -34,7 +34,7 @@ export default function AdminPage() {
   const [sortMethod, setSortMethod] = useState("time");
   const [isUploading, setIsUploading] = useState(false);
   
-  const { theme, setTheme } = useTheme(); // 🚀 主題狀態
+  const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
@@ -156,6 +156,28 @@ export default function AdminPage() {
     } catch (e) { alert("解除綁定失敗"); }
   };
 
+  // 🚀 修復：加入防呆機制的刪除紀錄邏輯
+  const handleDeleteLog = async (logId: string, solutionId: string) => {
+    if (!confirm("確定刪除此紀錄？（若解答仍在，將自動扣除觀看次數）")) return;
+    try {
+      const batch = writeBatch(db);
+      
+      // 1. 刪除紀錄本身
+      batch.delete(doc(db, "view_logs", logId));
+      
+      // 2. 防呆檢查：只有解答還存在時，才去扣除 view_count
+      if (solutions.some(s => s.id === solutionId)) {
+        batch.update(doc(db, "solutions", solutionId), { view_count: increment(-1) });
+      }
+      
+      await batch.commit();
+      await fetchAdminData();
+    } catch (e) { 
+      console.error(e);
+      alert("刪除紀錄失敗！"); 
+    }
+  };
+
   const sortedSolutions = [...solutions].sort((a, b) => 
     sortMethod === "subject" ? a.subject.localeCompare(b.subject, 'zh-TW') : 0
   );
@@ -174,7 +196,6 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950/80 p-4 md:p-8 pb-24 relative overflow-hidden text-slate-800 dark:text-slate-100 transition-colors duration-500">
       
-      {/* 🔮 動態磨砂背景 (支援深色模式) */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <motion.div animate={{ x: [0, 80, 0], y: [0, 50, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-200/30 dark:bg-indigo-900/20 blur-[120px] rounded-full" />
         <motion.div animate={{ x: [0, -100, 0], y: [0, 80, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} className="absolute -bottom-[10%] -right-[10%] w-[60%] h-[60%] bg-teal-100/30 dark:bg-teal-900/20 blur-[120px] rounded-full" />
@@ -182,28 +203,25 @@ export default function AdminPage() {
 
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
         
-        {/* Header */}
         <motion.div initial={{ y: -30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl dark:shadow-none transition-colors">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-indigo-600 dark:bg-indigo-500 rounded-2xl flex items-center justify-center text-white font-black">T</div>
             <h1 className="text-xl font-black tracking-tight hidden sm:block text-slate-800 dark:text-slate-100">TerryEdu Admin</h1>
           </div>
           <div className="flex items-center gap-3">
-            {/* 🚀 主題切換按鈕 */}
             {mounted && (
               <motion.button 
                 whileTap={{ scale: 0.9 }} 
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")} 
+                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} 
                 className="w-10 h-10 rounded-full bg-white/50 dark:bg-slate-800 border border-white dark:border-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-300 shadow-sm hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
               >
-                {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                {resolvedTheme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </motion.button>
             )}
             <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-6 py-2.5 rounded-full font-bold shadow-sm text-sm hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">登出</button>
           </div>
         </motion.div>
 
-        {/* Navbar */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center gap-2 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md p-2 rounded-full shadow-lg dark:shadow-none sticky top-4 z-40 border border-white/50 dark:border-slate-700/50 transition-colors">
           {[
             { id: "solutions", label: "解答", icon: <Book className="w-4 h-4"/>, color: "bg-indigo-600" },
@@ -230,7 +248,6 @@ export default function AdminPage() {
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} transition={{ duration: 0.3 }}>
               
-              {/* === 解答管理面板 === */}
               {activeTab === "solutions" && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="bg-white/70 dark:bg-slate-900/50 backdrop-blur-lg rounded-[3rem] p-8 shadow-xl dark:shadow-none border border-white dark:border-slate-700/50 h-fit transition-colors">
@@ -291,7 +308,6 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* === 學生管理面板 === */}
               {activeTab === "students" && (
                 <div className="bg-white/70 dark:bg-slate-900/50 backdrop-blur-lg p-8 md:p-12 rounded-[3.5rem] shadow-xl dark:shadow-none border border-white dark:border-slate-700/50 transition-colors">
                   <h2 className="text-xl font-black mb-10 text-center flex items-center justify-center gap-3 text-slate-800 dark:text-slate-100">
@@ -334,7 +350,6 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* === 報表管理面板 === */}
               {activeTab === "reports" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="bg-white/70 dark:bg-slate-900/50 backdrop-blur-lg p-10 rounded-[3.5rem] shadow-xl dark:shadow-none border border-white dark:border-slate-700/50 h-[450px] flex flex-col items-center transition-colors">
@@ -354,7 +369,6 @@ export default function AdminPage() {
                         <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>
                           {subjectChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
-                        {/* 🚀 Tooltip 深色適配 */}
                         <Tooltip contentStyle={{ 
                           borderRadius: '2rem', border: 'none', 
                           backgroundColor: theme === 'dark' ? '#1e293b' : 'rgba(255, 255, 255, 0.9)', 
@@ -385,7 +399,6 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* === 學生紀錄 Modal === */}
       <AnimatePresence>
         {selectedStudent && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -407,14 +420,8 @@ export default function AdminPage() {
                         <span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除"}</span>
                         <span className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span>
                       </div>
-                      <button onClick={() => {
-                        if(confirm("確定刪除並扣回次數？")) {
-                          const b = writeBatch(db);
-                          b.delete(doc(db,"view_logs",log.id));
-                          b.update(doc(db,"solutions",log.solution_id), {view_count: increment(-1)});
-                          b.commit().then(fetchAdminData);
-                        }
-                      }} className="bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all active:scale-95">刪除</button>
+                      {/* 🚀 這裡已經改成使用最新的防呆刪除函數！ */}
+                      <button onClick={() => handleDeleteLog(log.id, log.solution_id)} className="bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all active:scale-95">刪除</button>
                     </div>
                   );
                 })}
