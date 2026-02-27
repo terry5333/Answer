@@ -1,8 +1,8 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// 從環境變數讀取 Firebase 金鑰 (Vercel 或 .env.local)
+// 從環境變數讀取 Firebase 金鑰
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -12,16 +12,18 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// 💡 關鍵修復：Next.js 熱重載防呆機制
-// 檢查是否已經有初始化的 app，如果沒有才 initializeApp，避免重複執行報錯
+// 確保不會重複初始化
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-
-// 初始化 Auth 與 Firestore
 const auth = getAuth(app);
-const db = getFirestore(app);
 
-// 🚀 關鍵修復：建立並匯出 Google 登入的 Provider
+// 🚀 關鍵修復：強制 Firebase 將登入狀態寫入本地的 LocalStorage (永久記住直到手動登出)
+if (typeof window !== "undefined") {
+  setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.error("設定保持登入失敗:", error);
+  });
+}
+
+const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
-// 將它們統一匯出，讓整個系統都能乾淨地引用
 export { app, auth, db, provider };
