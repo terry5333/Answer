@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: "class", // 🚀 這是啟動深色模式的關鍵！
+  darkMode: "class", // 🚀 啟動手動深色模式的關鍵靈魂
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
