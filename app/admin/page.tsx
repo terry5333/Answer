@@ -99,7 +99,7 @@ export default function AdminPage() {
       await addDoc(collection(db, "solutions"), {
         subject, title, drive_file_id: driveData.id, view_count: 0, created_at: serverTimestamp()
       });
-      fetchAdminData();
+      await fetchAdminData();
       (e.target as HTMLFormElement).reset();
       alert("✅ 上傳成功");
     } catch (error: any) { alert("上傳失敗"); } finally { setIsUploading(false); }
@@ -107,29 +107,35 @@ export default function AdminPage() {
 
   const handleDeleteLog = async (logId: string, solutionId: string) => {
     if (!confirm("確定刪除紀錄？")) return;
-    const batch = writeBatch(db);
-    batch.delete(doc(db, "view_logs", logId));
-    batch.update(doc(db, "solutions", solutionId), { view_count: increment(-1) });
-    await batch.commit();
-    setViewLogs(prev => prev.filter(l => l.id !== logId));
-    setSolutions(prev => prev.map(s => s.id === solutionId ? { ...s, view_count: Math.max(0, (s.view_count || 1) - 1) } : s));
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "view_logs", logId));
+      batch.update(doc(db, "solutions", solutionId), { view_count: increment(-1) });
+      await batch.commit();
+      setViewLogs(prev => prev.filter(l => l.id !== logId));
+      setSolutions(prev => prev.map(s => s.id === solutionId ? { ...s, view_count: Math.max(0, (s.view_count || 1) - 1) } : s));
+    } catch (e) { alert("刪除失敗"); }
   };
 
   const handleUnbind = async (seatId: string, uid: string) => {
     if (!confirm("確定解除該座號綁定？")) return;
-    const batch = writeBatch(db);
-    batch.update(doc(db, "students", seatId), { bound_uid: null, bound_email: null, photo_url: null });
-    batch.delete(doc(db, "users", uid));
-    await batch.commit();
-    fetchAdminData();
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "students", seatId), { bound_uid: null, bound_email: null, photo_url: null });
+      batch.delete(doc(db, "users", uid));
+      await batch.commit();
+      await fetchAdminData();
+    } catch (e) { alert("解綁失敗"); }
   };
 
   const handleManualBind = async (seatId: string) => {
     const uid = prompt(`輸入 ${seatId} 號學生的 UID：`);
     if (!uid) return;
-    await updateDoc(doc(db, "students", seatId), { bound_uid: uid.trim() });
-    await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(seatId) }, { merge: true });
-    fetchAdminData();
+    try {
+      await updateDoc(doc(db, "students", seatId), { bound_uid: uid.trim() });
+      await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(seatId) }, { merge: true });
+      await fetchAdminData();
+    } catch (e) { alert("綁定失敗"); }
   };
 
   const sortedSolutions = [...solutions].sort((a, b) => 
@@ -149,58 +155,26 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-8 pb-24 relative overflow-hidden">
-      {/* 🔮 背景動態色塊 (The Vibe) */}
+      {/* 🔮 背景動態色塊 */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <motion.div 
-          animate={{ x: [0, 80, 0], y: [0, 50, 0] }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-200/40 blur-[120px] rounded-full"
-        />
-        <motion.div 
-          animate={{ x: [0, -100, 0], y: [0, 80, 0] }}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          className="absolute -bottom-[10%] -right-[10%] w-[60%] h-[60%] bg-teal-100/40 blur-[120px] rounded-full"
-        />
+        <motion.div animate={{ x: [0, 80, 0], y: [0, 50, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-200/40 blur-[120px] rounded-full" />
+        <motion.div animate={{ x: [0, -100, 0], y: [0, 80, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} className="absolute -bottom-[10%] -right-[10%] w-[60%] h-[60%] bg-teal-100/40 blur-[120px] rounded-full" />
       </div>
 
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
-        {/* Header */}
-        <motion.div 
-          initial={{ y: -50, opacity: 0 }} 
-          animate={{ y: 0, opacity: 1 }}
-          className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-6 px-10 flex justify-between items-center shadow-xl"
-        >
+        <motion.div initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-6 px-10 flex justify-between items-center shadow-xl">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black italic">T</div>
             <h1 className="text-2xl font-black text-gray-800 tracking-tight">TerryEdu Admin</h1>
           </div>
-          <motion.button 
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-            onClick={() => { signOut(auth); router.push("/login"); }} 
-            className="bg-red-500 text-white px-6 py-2.5 rounded-full font-bold shadow-lg shadow-red-100"
-          >
-            登出
-          </motion.button>
+          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => { signOut(auth); router.push("/login"); }} className="bg-red-500 text-white px-6 py-2.5 rounded-full font-bold shadow-lg">登出</motion.button>
         </motion.div>
 
-        {/* Navbar */}
-        <motion.div 
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="flex justify-center gap-2 bg-white/60 backdrop-blur-md p-3 rounded-full shadow-lg sticky top-4 z-40 border border-white/50 overflow-x-auto"
-        >
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center gap-2 bg-white/60 backdrop-blur-md p-3 rounded-full shadow-lg sticky top-4 z-40 border border-white/50 overflow-x-auto">
           {["solutions", "students", "reports"].map((tab) => (
-            <button 
-              key={tab}
-              onClick={() => setActiveTab(tab)} 
-              className={`relative px-6 py-3 rounded-full font-bold transition-colors text-sm sm:text-base ${activeTab === tab ? "text-white" : "text-gray-500 hover:text-gray-800"}`}
-            >
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`relative px-6 py-3 rounded-full font-bold transition-colors text-sm sm:text-base ${activeTab === tab ? "text-white" : "text-gray-500 hover:text-gray-800"}`}>
               {activeTab === tab && (
-                <motion.div 
-                  layoutId="activeTab" 
-                  className={`absolute inset-0 z-[-1] shadow-lg ${tab === 'solutions' ? 'bg-indigo-600' : tab === 'students' ? 'bg-teal-600' : 'bg-orange-500'}`} 
-                  style={{ borderRadius: 9999 }}
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
+                <motion.div layoutId="activeTab" className={`absolute inset-0 z-[-1] shadow-lg ${tab === 'solutions' ? 'bg-indigo-600' : tab === 'students' ? 'bg-teal-600' : 'bg-orange-500'}`} style={{ borderRadius: 9999 }} transition={{ type: "spring", stiffness: 380, damping: 30 }} />
               )}
               {tab === "solutions" ? "📘 解答" : tab === "students" ? "👥 學生" : "📊 報表"}
             </button>
@@ -216,24 +190,18 @@ export default function AdminPage() {
           </motion.div>
         ) : (
           <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -20, opacity: 0 }}
-              transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-            >
+            <motion.div key={activeTab} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} transition={{ duration: 0.4 }}>
               {activeTab === "solutions" && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="bg-white/70 backdrop-blur-lg rounded-[3rem] p-8 shadow-xl border border-white h-fit">
-                    <h2 className="text-xl font-black mb-6 text-gray-800 flex items-center gap-2"><span className="w-2 h-6 bg-indigo-500 rounded-full" /> 科目設定</h2>
+                    <h2 className="text-xl font-black mb-6 text-gray-800">🏷️ 科目設定</h2>
                     <div className="flex gap-2 mb-6">
-                      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white border-none ring-1 ring-gray-200 outline-none transition-all" />
-                      <button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold text-xl">+</button>
+                      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white border outline-none" />
+                      <button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); await fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold text-xl">+</button>
                     </div>
                     <div className="space-y-3">
                       {subjects.map(s => (
-                        <div key={s.id} className="flex justify-between bg-white/80 px-6 py-3 rounded-2xl font-bold text-gray-700 shadow-sm">
+                        <div key={s.id} className="flex justify-between bg-white/80 px-6 py-3 rounded-2xl font-bold text-gray-700">
                           {s.name}
                           <button onClick={() => deleteDoc(doc(db,"subjects",s.id)).then(fetchAdminData)} className="text-red-300">✕</button>
                         </div>
@@ -250,29 +218,18 @@ export default function AdminPage() {
                           {subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                         </select>
                         <input name="title" required placeholder="解答標題" className="flex-1 w-full bg-white border rounded-full px-6 py-3.5 font-bold outline-none" />
-                        <input type="file" name="file" required className="text-xs w-full sm:w-auto" />
-                        <button disabled={isUploading} className="bg-indigo-600 text-white font-black py-3.5 px-10 rounded-full shadow-lg disabled:opacity-50">
-                          {isUploading ? "..." : "發佈"}
-                        </button>
+                        <input type="file" name="file" required className="text-xs" />
+                        <button disabled={isUploading} className="bg-indigo-600 text-white font-black py-3.5 px-10 rounded-full shadow-lg disabled:opacity-50">上傳</button>
                       </form>
                     </div>
 
                     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="bg-white/70 backdrop-blur-lg p-10 rounded-[4rem] shadow-xl border border-white">
-                      <div className="flex justify-between items-center mb-8">
-                        <h2 className="text-xl font-black">📚 解答庫</h2>
-                        <select value={sortMethod} onChange={(e) => setSortMethod(e.target.value)} className="bg-white px-5 py-2.5 rounded-full font-bold text-xs outline-none">
-                          <option value="time">🕒 時間</option>
-                          <option value="subject">🏷️ 科目</option>
-                        </select>
-                      </div>
+                      <h2 className="text-xl font-black mb-8">📚 解答庫</h2>
                       <div className="space-y-4">
                         {sortedSolutions.map(sol => (
                           <motion.div key={sol.id} variants={itemVariants} className="flex justify-between items-center bg-white/80 px-8 py-5 rounded-[2.5rem] shadow-sm border border-gray-50 group">
-                            <span className="font-bold text-gray-700">
-                              <span className="text-indigo-500 mr-3 text-sm tracking-widest">[{sol.subject}]</span>
-                              {sol.title}
-                            </span>
-                            <button onClick={() => deleteDoc(doc(db,"solutions",sol.id)).then(fetchAdminData)} className="bg-red-50 text-red-500 text-xs font-bold px-4 py-2 rounded-full sm:opacity-0 group-hover:opacity-100 transition-all">刪除</button>
+                            <span className="font-bold text-gray-700"><span className="text-indigo-500 mr-3 text-sm">[{sol.subject}]</span>{sol.title}</span>
+                            <button onClick={() => deleteDoc(doc(db,"solutions",sol.id)).then(fetchAdminData)} className="bg-red-50 text-red-500 text-xs px-4 py-2 rounded-full sm:opacity-0 group-hover:opacity-100 transition-all">刪除</button>
                           </motion.div>
                         ))}
                       </div>
@@ -286,10 +243,7 @@ export default function AdminPage() {
                   <h2 className="text-2xl font-black mb-10 text-center">學生身分綁定狀態</h2>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
                     {students.map(student => (
-                      <motion.div 
-                        key={student.id} variants={itemVariants}
-                        className="bg-white/90 p-6 rounded-[3rem] flex flex-col items-center shadow-lg border border-gray-50"
-                      >
+                      <motion.div key={student.id} variants={itemVariants} className="bg-white/90 p-6 rounded-[3rem] flex flex-col items-center shadow-lg border border-gray-50">
                         <div onClick={() => setSelectedStudent(student)} className="cursor-pointer relative mb-4">
                           <img src={student.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.name}`} className="w-16 h-16 rounded-full border-4 border-white shadow-md" referrerPolicy="no-referrer" />
                           <div className="absolute -bottom-1 -right-1 bg-indigo-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white">{student.seat_number}</div>
@@ -315,8 +269,17 @@ export default function AdminPage() {
                     </div>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none">
-                          {subjectChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} cornerRadius={10} />)}
+                        <Pie 
+                          data={subjectChartData} 
+                          cx="50%" 
+                          cy="50%" 
+                          innerRadius={70} 
+                          outerRadius={110} 
+                          dataKey="value" 
+                          stroke="none"
+                          cornerRadius={10} // 🚀 修正：圓角屬性移到 Pie 本體
+                        >
+                          {subjectChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
                         <Tooltip contentStyle={{ borderRadius: '2rem', border: 'none' }} />
                         <Legend />
@@ -324,9 +287,9 @@ export default function AdminPage() {
                     </ResponsiveContainer>
                   </div>
                   <div className="bg-white/70 backdrop-blur-lg p-10 rounded-[4rem] shadow-xl border border-white overflow-y-auto max-h-[450px]">
-                    <h2 className="text-xl font-black mb-8">點擊排行</h2>
+                    <h2 className="text-xl font-black mb-8">點擊排行 (Top 5)</h2>
                     {[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,5).map((sol, i) => (
-                      <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 rounded-[2rem] mb-4 shadow-sm border border-white/50">
+                      <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 rounded-[2rem] mb-4 shadow-sm">
                         <span className="font-black text-gray-700 flex items-center">
                           <span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white ${i === 0 ? 'bg-yellow-400' : 'bg-indigo-300'}`}>{i+1}</span>
                           {sol.title}
