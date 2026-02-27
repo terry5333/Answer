@@ -71,16 +71,23 @@ export default function DashboardPage() {
     router.push("/login");
   };
 
-  // 🚀 核心優化：過濾科目，並「依照科目名稱排序」
   const sortedAndFilteredSolutions = solutions
     .filter(s => selectedSubject === "全部" || s.subject === selectedSubject)
     .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-TW'));
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 text-indigo-600 font-bold">
-      確認身分中...
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-5">
+          <svg className="animate-spin h-12 w-12 text-teal-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <div className="text-teal-600 font-bold text-lg tracking-widest animate-pulse">讀取資料中...</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isVerified) {
     return (
@@ -88,7 +95,7 @@ export default function DashboardPage() {
         <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 md:p-12 shadow-2xl w-full max-w-md text-center animate-in fade-in zoom-in">
           <div className="text-5xl mb-6">🛡️</div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">安全檢查</h1>
-          <p className="text-gray-500 mb-8 text-sm md:text-base">為了保護帳號安全，請完成驗證以解鎖解答卡片。</p>
+          <p className="text-gray-500 mb-8 text-sm md:text-base">請完成驗證以解鎖解答卡片。</p>
           <div className="flex justify-center mb-6 overflow-hidden">
             <Turnstile siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!} onSuccess={() => setIsVerified(true)} />
           </div>
@@ -102,7 +109,6 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100 p-4 md:p-8 relative">
       <div className="max-w-5xl mx-auto flex flex-col gap-6 md:gap-8">
         
-        {/* 📱 手機版自適應頂部導覽列 */}
         <div className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] md:rounded-[3rem] p-5 md:p-6 px-6 md:px-10 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-lg">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
@@ -127,12 +133,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📱 手機版自適應解答區 */}
         <div className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] md:rounded-[3rem] p-6 md:p-10 shadow-lg min-h-[60vh]">
-          
-          {/* 下拉選單區塊：手機版佔滿寬度 */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-3">
-            <h2 className="text-lg md:text-xl font-bold text-gray-700 ml-2">選擇你想查看的科目</h2>
+            <h2 className="text-lg md:text-xl font-bold text-gray-700 ml-2">選擇想查看的科目</h2>
             <select 
               value={selectedSubject} 
               onChange={(e) => setSelectedSubject(e.target.value)} 
@@ -145,7 +148,6 @@ export default function DashboardPage() {
             </select>
           </div>
 
-          {/* 解答卡片網格：手機版 1 欄，平板 2 欄，電腦 3 欄 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-8">
             {sortedAndFilteredSolutions.map((sol) => (
               <div 
@@ -158,7 +160,7 @@ export default function DashboardPage() {
                   <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-4 leading-snug">{sol.title}</h3>
                 </div>
                 <div className="text-indigo-600 font-bold text-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  開啟解答檔案 <span>➔</span>
+                  開啟檔案 <span>➔</span>
                 </div>
               </div>
             ))}
@@ -167,13 +169,12 @@ export default function DashboardPage() {
           {sortedAndFilteredSolutions.length === 0 && (
             <div className="text-center py-20 text-gray-400 font-medium flex flex-col items-center gap-2">
               <span className="text-4xl">📭</span>
-              <span>目前尚無此科目的解答</span>
+              <span>目前尚無解答</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 預覽解答 Modal：手機版滿版 */}
       {viewingPreviewUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md p-2 md:p-10 animate-in fade-in">
           <div className="bg-white/90 backdrop-blur-2xl border border-white rounded-[2rem] md:rounded-[3rem] shadow-2xl w-full h-full md:max-w-5xl md:h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95">
