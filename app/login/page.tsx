@@ -1,20 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { auth, db, provider } from "@/lib/firebase"; 
-import { signInWithPopup } from "firebase/auth";
+import { signInWithPopup, onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
+  
+  // 🚀 新增：一進網站時的「偷偷檢查」狀態
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
   
   const [step, setStep] = useState<"login" | "bind">("login");
   const [seatNumber, setSeatNumber] = useState("");
   const [tempUser, setTempUser] = useState<any>(null);
 
-  // 🚀 核心邏輯：Google 登入與強制防呆檢核
+  // 🚀 核心修復：自動刷臉通關機制
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // Firebase 發現這個人已經登入過！直接去查權限
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          if (userData.role === "teacher") {
+            router.push("/admin");
+            return;
+          }
+          if (userData.role === "student" && userData.seat_number) {
+            router.push("/dashboard");
+            return;
+          }
+        }
+        // 如果有帳號但資料不全，跳到綁定頁面
+        setTempUser(user);
+        setStep("bind");
+        setIsCheckingAuth(false);
+      } else {
+        // 確實沒有登入紀錄，關閉檢查畫面，顯示 Google 登入按鈕
+        setIsCheckingAuth(false);
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
@@ -26,22 +59,16 @@ export default function LoginPage() {
 
       if (userSnap.exists()) {
         const userData = userSnap.data();
-        
-        // 如果是老師，直接放行
         if (userData.role === "teacher") {
           router.push("/admin");
           return;
         }
-
         if (userData.role === "student") {
-          // 💡 終極防呆：檢查舊學生是否有「完整的座號紀錄」
           if (userData.seat_number) {
             const studentRef = doc(db, "students", String(userData.seat_number));
             const studentSnap = await getDoc(studentRef);
-
             if (studentSnap.exists()) {
               const studentData = studentSnap.data();
-              // 如果名單上他的 bound_uid 是空的 (以前漏掉的)，或是剛好就是他自己，幫他修復並放行
               if (!studentData.bound_uid || studentData.bound_uid === user.uid) {
                 await updateDoc(studentRef, {
                   bound_uid: user.uid,
@@ -53,19 +80,12 @@ export default function LoginPage() {
               }
             }
           }
-
-          // ⚠️ 如果走到這裡，代表：
-          // 1. 舊學生以前登入時，系統還沒有存座號的功能
-          // 2. 老師把這個座號從名單刪掉了
-          // 3. 這個座號被別的同學綁走了
-          // 結論：通通打回綁定頁面，強迫他重新綁定！
           setTempUser(user);
           setStep("bind");
           setLoading(false);
           return;
         }
       } else {
-        // 完全沒登入過的新生
         setTempUser(user);
         setStep("bind");
         setLoading(false);
@@ -77,7 +97,6 @@ export default function LoginPage() {
     }
   };
 
-  // 🚀 核心邏輯：註冊並綁定座號
   const handleBindStudent = async () => {
     if (!seatNumber || !tempUser) return alert("請輸入座號！");
     setLoading(true);
@@ -93,20 +112,17 @@ export default function LoginPage() {
 
       const studentData = studentSnap.data();
 
-      // 防呆：確認座號沒有被別人綁走
       if (studentData.bound_uid && studentData.bound_uid !== tempUser.uid) {
         setLoading(false);
         return alert("❌ 此座號已被其他 Google 帳號綁定！如果您選錯了，請聯絡老師。");
       }
 
-      // 寫入綁定資訊到 students 集合 (順便存入大頭貼)
       await updateDoc(studentRef, {
         bound_uid: tempUser.uid,
         bound_email: tempUser.email,
         photo_url: tempUser.photoURL
       });
 
-      // 建立使用者的權限檔案 (覆蓋舊的殘缺檔案)
       await setDoc(doc(db, "users", tempUser.uid), {
         role: "student",
         seat_number: Number(seatNumber),
@@ -124,15 +140,25 @@ export default function LoginPage() {
     }
   };
 
+  // 🚀 如果系統還在檢查登入狀態，顯示過場動畫，不讓學生看到按鈕
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100 flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-4 animate-pulse">
+          <img src="/logo.png" alt="TerryEdu" className="w-16 h-16 drop-shadow-md" onError={(e) => e.currentTarget.style.display = 'none'} />
+          <div className="text-indigo-600 font-bold text-lg tracking-widest">確認身分中...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100 flex items-center justify-center p-6">
       <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-10 shadow-2xl w-full max-w-md flex flex-col items-center animate-in fade-in zoom-in">
         
-        {/* 系統 Logo */}
         <img src="/logo.png" alt="TerryEdu Logo" className="w-20 h-20 mb-6 drop-shadow-md" onError={(e) => e.currentTarget.style.display = 'none'} />
         <h1 className="text-2xl font-bold text-indigo-900 mb-8 tracking-wide">登入 TerryEdu</h1>
 
-        {/* 步驟一：Google 登入 */}
         {step === "login" && (
           <div className="w-full flex flex-col gap-4">
             <button 
@@ -147,7 +173,6 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* 步驟二：強制綁定座號 */}
         {step === "bind" && (
           <div className="w-full flex flex-col gap-5 animate-in slide-in-from-right">
             <div className="text-center mb-2">
