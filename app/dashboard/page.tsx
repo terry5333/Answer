@@ -38,6 +38,8 @@ export default function DashboardPage() {
         router.push("/login");
         return;
       }
+      
+      // 1. 先從 users 表確認這個帳號綁定的「座號」
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
 
@@ -46,7 +48,21 @@ export default function DashboardPage() {
         router.push("/login");
         return;
       }
-      setUserData(userSnap.data());
+
+      const seatNumber = userSnap.data().seat_number;
+
+      // 🚀 2. 關鍵修復：拿著座號去 students 表抓取「老師最新修改的姓名」
+      const studentRef = doc(db, "students", String(seatNumber));
+      const studentSnap = await getDoc(studentRef);
+      
+      // 將座號與最新姓名合併存入狀態
+      const latestName = studentSnap.exists() ? studentSnap.data().name : userSnap.data().name;
+
+      setUserData({ 
+        ...userSnap.data(), 
+        name: latestName 
+      });
+
       await fetchSolutions();
       setLoading(false);
     });
@@ -115,9 +131,10 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex items-center gap-2 md:gap-4 bg-white/50 p-1.5 pr-4 rounded-full border border-white/50">
-              <img src={auth.currentUser?.photoURL || ""} className="w-8 h-8 rounded-full border border-white" referrerPolicy="no-referrer" />
+              <img src={auth.currentUser?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} className="w-8 h-8 rounded-full border border-white" referrerPolicy="no-referrer" />
               <div className="flex flex-col text-left">
-                <span className="font-black text-xs md:text-sm leading-none">{userData?.seat_number} 號 {userData?.name}</span>
+                {/* 這裡會正確顯示老師最新改過的名字 */}
+                <span className="font-black text-xs md:text-sm leading-none text-slate-700">{userData?.seat_number} 號 {userData?.name}</span>
               </div>
               <motion.button whileTap={{ scale: 0.9 }} onClick={() => { signOut(auth); router.push("/login"); }} className="ml-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut className="w-4 h-4" /></motion.button>
             </div>
@@ -153,7 +170,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 🚀 解答預覽 Modal */}
+      {/* 解答預覽 Modal */}
       <AnimatePresence>
         {viewingPreviewUrl && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-6 overflow-hidden">
