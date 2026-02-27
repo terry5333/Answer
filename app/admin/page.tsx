@@ -11,11 +11,11 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Turnstile } from "@marsidev/react-turnstile";
-import { motion, AnimatePresence } from "framer-motion"; // 🚀 引入動畫神器
+import { motion, AnimatePresence } from "framer-motion";
 
 const COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#60a5fa'];
 
-// 🎨 動態定義：交錯進場效果
+// 動態定義：交錯進場效果
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -53,7 +53,7 @@ export default function AdminPage() {
         router.push("/dashboard"); 
         return; 
       }
-      fetchAdminData();
+      await fetchAdminData();
       setLoading(false);
     });
     return () => unsubscribe();
@@ -101,6 +101,7 @@ export default function AdminPage() {
       });
       fetchAdminData();
       (e.target as HTMLFormElement).reset();
+      alert("✅ 上傳成功");
     } catch (error: any) { alert("上傳失敗"); } finally { setIsUploading(false); }
   };
 
@@ -112,6 +113,23 @@ export default function AdminPage() {
     await batch.commit();
     setViewLogs(prev => prev.filter(l => l.id !== logId));
     setSolutions(prev => prev.map(s => s.id === solutionId ? { ...s, view_count: Math.max(0, (s.view_count || 1) - 1) } : s));
+  };
+
+  const handleUnbind = async (seatId: string, uid: string) => {
+    if (!confirm("確定解除該座號綁定？")) return;
+    const batch = writeBatch(db);
+    batch.update(doc(db, "students", seatId), { bound_uid: null, bound_email: null, photo_url: null });
+    batch.delete(doc(db, "users", uid));
+    await batch.commit();
+    fetchAdminData();
+  };
+
+  const handleManualBind = async (seatId: string) => {
+    const uid = prompt(`輸入 ${seatId} 號學生的 UID：`);
+    if (!uid) return;
+    await updateDoc(doc(db, "students", seatId), { bound_uid: uid.trim() });
+    await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(seatId) }, { merge: true });
+    fetchAdminData();
   };
 
   const sortedSolutions = [...solutions].sort((a, b) => 
@@ -131,7 +149,6 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-8 pb-24 relative overflow-hidden">
-      
       {/* 🔮 背景動態色塊 (The Vibe) */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <motion.div 
@@ -147,15 +164,14 @@ export default function AdminPage() {
       </div>
 
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
-        
         {/* Header */}
         <motion.div 
           initial={{ y: -50, opacity: 0 }} 
           animate={{ y: 0, opacity: 1 }}
-          className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-6 px-10 flex justify-between items-center shadow-xl shadow-indigo-100/50"
+          className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-6 px-10 flex justify-between items-center shadow-xl"
         >
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black italic shadow-lg">T</div>
+            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black italic">T</div>
             <h1 className="text-2xl font-black text-gray-800 tracking-tight">TerryEdu Admin</h1>
           </div>
           <motion.button 
@@ -170,13 +186,13 @@ export default function AdminPage() {
         {/* Navbar */}
         <motion.div 
           initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="flex justify-center gap-4 bg-white/60 backdrop-blur-md p-3 rounded-full shadow-lg sticky top-4 z-40 border border-white/50"
+          className="flex justify-center gap-2 bg-white/60 backdrop-blur-md p-3 rounded-full shadow-lg sticky top-4 z-40 border border-white/50 overflow-x-auto"
         >
           {["solutions", "students", "reports"].map((tab) => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)} 
-              className={`relative px-8 py-3 rounded-full font-bold transition-colors ${activeTab === tab ? "text-white" : "text-gray-500 hover:text-gray-800"}`}
+              className={`relative px-6 py-3 rounded-full font-bold transition-colors text-sm sm:text-base ${activeTab === tab ? "text-white" : "text-gray-500 hover:text-gray-800"}`}
             >
               {activeTab === tab && (
                 <motion.div 
@@ -207,60 +223,56 @@ export default function AdminPage() {
               exit={{ y: -20, opacity: 0 }}
               transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
             >
-              {/* 📘 解答管理 */}
               {activeTab === "solutions" && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <motion.div variants={itemVariants} className="bg-white/70 backdrop-blur-lg rounded-[3rem] p-8 shadow-xl border border-white h-fit">
+                  <div className="bg-white/70 backdrop-blur-lg rounded-[3rem] p-8 shadow-xl border border-white h-fit">
                     <h2 className="text-xl font-black mb-6 text-gray-800 flex items-center gap-2"><span className="w-2 h-6 bg-indigo-500 rounded-full" /> 科目設定</h2>
                     <div className="flex gap-2 mb-6">
-                      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white/50 border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-indigo-400 outline-none transition-all" />
-                      <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold text-xl">+</motion.button>
+                      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white border-none ring-1 ring-gray-200 outline-none transition-all" />
+                      <button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold text-xl">+</button>
                     </div>
-                    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-3">
+                    <div className="space-y-3">
                       {subjects.map(s => (
-                        <motion.div key={s.id} variants={itemVariants} className="flex justify-between bg-white/80 px-6 py-3 rounded-2xl font-bold text-gray-700 shadow-sm border border-gray-50">
+                        <div key={s.id} className="flex justify-between bg-white/80 px-6 py-3 rounded-2xl font-bold text-gray-700 shadow-sm">
                           {s.name}
-                          <button onClick={() => deleteDoc(doc(db,"subjects",s.id)).then(fetchAdminData)} className="text-red-300 hover:text-red-500 transition-colors">✕</button>
-                        </motion.div>
+                          <button onClick={() => deleteDoc(doc(db,"subjects",s.id)).then(fetchAdminData)} className="text-red-300">✕</button>
+                        </div>
                       ))}
-                    </motion.div>
-                  </motion.div>
+                    </div>
+                  </div>
 
                   <div className="lg:col-span-2 flex flex-col gap-8">
-                    <motion.div variants={itemVariants} className="bg-white/70 backdrop-blur-lg p-8 rounded-[3.5rem] shadow-xl border border-white">
-                      <h2 className="text-xl font-black mb-6 text-gray-800">📤 上傳解答</h2>
+                    <div className="bg-white/70 backdrop-blur-lg p-8 rounded-[3.5rem] shadow-xl border border-white">
+                      <h2 className="text-xl font-black mb-6">📤 上傳解答</h2>
                       <form onSubmit={handleUpload} className="flex flex-col sm:flex-row gap-4 items-center">
-                        <select name="subject" required className="w-full sm:w-1/3 bg-white/50 border-none ring-1 ring-gray-200 rounded-full px-5 py-3.5 font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-400">
+                        <select name="subject" required className="w-full sm:w-1/3 bg-white border rounded-full px-5 py-3.5 font-bold outline-none">
                           <option value="">選擇科目</option>
                           {subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                         </select>
-                        <input name="title" required placeholder="解答標題" className="flex-1 w-full bg-white/50 border-none ring-1 ring-gray-200 rounded-full px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-indigo-400" />
-                        <div className="relative">
-                          <input type="file" name="file" required className="opacity-0 absolute inset-0 w-full h-full cursor-pointer" />
-                          <div className="bg-indigo-50 text-indigo-600 px-6 py-3.5 rounded-full font-bold text-sm border border-indigo-100">選擇檔案</div>
-                        </div>
-                        <motion.button disabled={isUploading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="bg-indigo-600 text-white font-black py-3.5 px-10 rounded-full shadow-lg shadow-indigo-100 disabled:opacity-50">
-                          {isUploading ? "上傳中" : "發佈"}
-                        </motion.button>
+                        <input name="title" required placeholder="解答標題" className="flex-1 w-full bg-white border rounded-full px-6 py-3.5 font-bold outline-none" />
+                        <input type="file" name="file" required className="text-xs w-full sm:w-auto" />
+                        <button disabled={isUploading} className="bg-indigo-600 text-white font-black py-3.5 px-10 rounded-full shadow-lg disabled:opacity-50">
+                          {isUploading ? "..." : "發佈"}
+                        </button>
                       </form>
-                    </motion.div>
+                    </div>
 
                     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="bg-white/70 backdrop-blur-lg p-10 rounded-[4rem] shadow-xl border border-white">
                       <div className="flex justify-between items-center mb-8">
-                        <h2 className="text-xl font-black text-gray-800">📚 解答庫</h2>
-                        <select value={sortMethod} onChange={(e) => setSortMethod(e.target.value)} className="bg-white/80 px-5 py-2.5 rounded-full font-bold text-xs border-none ring-1 ring-gray-100 outline-none">
-                          <option value="time">🕒 最新時間</option>
-                          <option value="subject">🏷️ 科目排序</option>
+                        <h2 className="text-xl font-black">📚 解答庫</h2>
+                        <select value={sortMethod} onChange={(e) => setSortMethod(e.target.value)} className="bg-white px-5 py-2.5 rounded-full font-bold text-xs outline-none">
+                          <option value="time">🕒 時間</option>
+                          <option value="subject">🏷️ 科目</option>
                         </select>
                       </div>
                       <div className="space-y-4">
                         {sortedSolutions.map(sol => (
-                          <motion.div key={sol.id} variants={itemVariants} className="flex justify-between items-center bg-white/80 px-8 py-5 rounded-[2.5rem] shadow-sm hover:shadow-md transition-all border border-gray-50 group">
+                          <motion.div key={sol.id} variants={itemVariants} className="flex justify-between items-center bg-white/80 px-8 py-5 rounded-[2.5rem] shadow-sm border border-gray-50 group">
                             <span className="font-bold text-gray-700">
-                              <span className="text-indigo-500 mr-3 text-sm tracking-widest bg-indigo-50 px-3 py-1 rounded-full uppercase">[{sol.subject}]</span>
+                              <span className="text-indigo-500 mr-3 text-sm tracking-widest">[{sol.subject}]</span>
                               {sol.title}
                             </span>
-                            <button onClick={() => deleteDoc(doc(db,"solutions",sol.id)).then(fetchAdminData)} className="opacity-0 group-hover:opacity-100 bg-red-50 text-red-500 text-xs font-bold px-4 py-2 rounded-full transition-all hover:bg-red-500 hover:text-white">刪除</button>
+                            <button onClick={() => deleteDoc(doc(db,"solutions",sol.id)).then(fetchAdminData)} className="bg-red-50 text-red-500 text-xs font-bold px-4 py-2 rounded-full sm:opacity-0 group-hover:opacity-100 transition-all">刪除</button>
                           </motion.div>
                         ))}
                       </div>
@@ -269,32 +281,24 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* 👥 學生管理 */}
               {activeTab === "students" && (
                 <motion.div variants={containerVariants} initial="hidden" animate="visible" className="bg-white/70 backdrop-blur-lg p-12 rounded-[4rem] shadow-xl border border-white">
-                  <h2 className="text-2xl font-black mb-10 text-gray-800 text-center">學生身分綁定狀態</h2>
+                  <h2 className="text-2xl font-black mb-10 text-center">學生身分綁定狀態</h2>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
                     {students.map(student => (
                       <motion.div 
                         key={student.id} variants={itemVariants}
-                        whileHover={{ y: -8, scale: 1.02 }}
-                        className="bg-white/90 p-6 rounded-[3rem] flex flex-col items-center shadow-lg border border-gray-50 text-center"
+                        className="bg-white/90 p-6 rounded-[3rem] flex flex-col items-center shadow-lg border border-gray-50"
                       >
-                        <div onClick={() => setSelectedStudent(student)} className="cursor-pointer group relative mb-4">
-                          <img src={student.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.name}`} className="w-16 h-16 rounded-full border-4 border-white shadow-md transition-transform group-hover:rotate-6" referrerPolicy="no-referrer" />
+                        <div onClick={() => setSelectedStudent(student)} className="cursor-pointer relative mb-4">
+                          <img src={student.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.name}`} className="w-16 h-16 rounded-full border-4 border-white shadow-md" referrerPolicy="no-referrer" />
                           <div className="absolute -bottom-1 -right-1 bg-indigo-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white">{student.seat_number}</div>
                         </div>
                         <div className="font-black text-gray-800 mb-4">{student.name}</div>
                         {student.bound_uid ? (
-                          <div className="flex flex-col gap-2 w-full pt-4 border-t border-gray-100">
-                            <span className="text-[10px] text-green-600 font-black bg-green-50 py-1.5 rounded-full">GOOGLE 已連動</span>
-                            <button onClick={() => handleUnbind(student.id, student.bound_uid)} className="text-[10px] text-red-400 font-bold hover:text-red-600">解除綁定</button>
-                          </div>
+                          <button onClick={() => handleUnbind(student.id, student.bound_uid)} className="text-[10px] text-red-400 font-bold">解除連動</button>
                         ) : (
-                          <div className="flex flex-col gap-2 w-full pt-4 border-t border-gray-100">
-                            <span className="text-[10px] text-gray-400 font-black bg-gray-50 py-1.5 rounded-full">未連動</span>
-                            <button onClick={() => handleManualBind(student.id)} className="text-[10px] text-indigo-500 font-bold hover:text-indigo-700">手動 UID</button>
-                          </div>
+                          <button onClick={() => handleManualBind(student.id)} className="text-[10px] text-indigo-500 font-bold">手動連動</button>
                         )}
                       </motion.div>
                     ))}
@@ -302,36 +306,35 @@ export default function AdminPage() {
                 </motion.div>
               )}
 
-              {/* 📊 報表統計 */}
               {activeTab === "reports" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <motion.div variants={itemVariants} className="bg-white/70 backdrop-blur-lg p-10 rounded-[4rem] shadow-xl border border-white h-[450px] flex flex-col items-center">
+                  <div className="bg-white/70 backdrop-blur-lg p-10 rounded-[4rem] shadow-xl border border-white h-[450px] flex flex-col items-center">
                     <div className="flex justify-between w-full mb-4">
-                      <h2 className="text-xl font-black text-gray-800">各科熱度分析</h2>
-                      <button onClick={fetchAdminData} className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full">同步數據</button>
+                      <h2 className="text-xl font-black">熱度分析</h2>
+                      <button onClick={fetchAdminData} className="text-[10px] bg-indigo-50 px-4 py-2 rounded-full">🔄 重新整理</button>
                     </div>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" paddingAngle={5}>
+                        <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none">
                           {subjectChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} cornerRadius={10} />)}
                         </Pie>
-                        <Tooltip contentStyle={{ borderRadius: '2rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }} />
-                        <Legend iconType="circle" />
+                        <Tooltip contentStyle={{ borderRadius: '2rem', border: 'none' }} />
+                        <Legend />
                       </PieChart>
                     </ResponsiveContainer>
-                  </motion.div>
-                  <motion.div variants={itemVariants} className="bg-white/70 backdrop-blur-lg p-10 rounded-[4rem] shadow-xl border border-white overflow-y-auto max-h-[450px] custom-scrollbar">
-                    <h2 className="text-xl font-black mb-8 text-gray-800">熱門解答 Top 5</h2>
+                  </div>
+                  <div className="bg-white/70 backdrop-blur-lg p-10 rounded-[4rem] shadow-xl border border-white overflow-y-auto max-h-[450px]">
+                    <h2 className="text-xl font-black mb-8">點擊排行</h2>
                     {[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,5).map((sol, i) => (
                       <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 rounded-[2rem] mb-4 shadow-sm border border-white/50">
                         <span className="font-black text-gray-700 flex items-center">
-                          <span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-gray-400' : i === 2 ? 'bg-orange-300' : 'bg-indigo-300'}`}>{i+1}</span>
+                          <span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white ${i === 0 ? 'bg-yellow-400' : 'bg-indigo-300'}`}>{i+1}</span>
                           {sol.title}
                         </span>
-                        <span className="text-indigo-600 font-black bg-indigo-50 px-5 py-2 rounded-full text-sm">{sol.view_count || 0}</span>
+                        <span className="text-indigo-600 font-black">{sol.view_count || 0}</span>
                       </div>
                     ))}
-                  </motion.div>
+                  </div>
                 </div>
               )}
             </motion.div>
@@ -339,39 +342,25 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* 🚀 紀錄 Modal 彈出動畫 */}
       <AnimatePresence>
         {selectedStudent && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setSelectedStudent(null)}
-              className="absolute inset-0 bg-black/20 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ scale: 0.9, y: 20, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="bg-white/95 backdrop-blur-2xl rounded-[4rem] p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)] border border-white relative z-10"
-            >
-              <div className="flex justify-between items-center mb-8 pb-6 border-b border-gray-100">
-                <div className="flex items-center gap-5">
-                  <img src={selectedStudent.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-14 h-14 rounded-full border-4 border-white shadow-lg" referrerPolicy="no-referrer" />
-                  <h3 className="text-2xl font-black text-gray-800">{selectedStudent.seat_number} 號 {selectedStudent.name}</h3>
-                </div>
-                <motion.button whileHover={{ rotate: 90 }} onClick={() => setSelectedStudent(null)} className="h-12 w-12 bg-gray-100 rounded-full font-black text-xl">✕</motion.button>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedStudent(null)} className="absolute inset-0 bg-black/20 backdrop-blur-md" />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white/95 backdrop-blur-2xl rounded-[4rem] p-10 w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl relative z-10">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b">
+                <h3 className="text-2xl font-black">{selectedStudent.seat_number} 號 {selectedStudent.name} 紀錄</h3>
+                <button onClick={() => setSelectedStudent(null)} className="font-black">✕</button>
               </div>
-              <div className="overflow-y-auto flex-1 space-y-4 pr-2 custom-scrollbar">
+              <div className="overflow-y-auto space-y-4 pr-2">
                 {viewLogs.filter(l => l.seat_number === selectedStudent.seat_number).map(log => {
                   const s = solutions.find(sol => sol.id === log.solution_id);
                   return (
-                    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} key={log.id} className="group bg-white/70 p-6 rounded-[2.5rem] flex justify-between items-center shadow-sm border border-white hover:bg-white transition-all">
+                    <div key={log.id} className="group bg-white/70 p-6 rounded-[2.5rem] flex justify-between items-center border border-white shadow-sm">
                       <div className="flex flex-col">
-                        <span className="font-black text-gray-700">{s ? s.title : "已刪除解答"}</span>
-                        <span className="text-[10px] text-gray-400 mt-2 font-bold uppercase tracking-wider bg-gray-50 px-3 py-1 rounded-full self-start">{log.viewed_at?.toDate().toLocaleString()}</span>
+                        <span className="font-black text-gray-700">{s ? s.title : "已刪除"}</span>
+                        <span className="text-[10px] text-gray-400">{log.viewed_at?.toDate().toLocaleString()}</span>
                       </div>
-                      <button onClick={() => handleDeleteLog(log.id, log.solution_id)} className="opacity-0 group-hover:opacity-100 bg-red-50 text-red-500 text-[10px] px-5 py-2 rounded-full font-black transition-all active:scale-95">刪除</button>
+                      <button onClick={() => handleDeleteLog(log.id, log.solution_id)} className="bg-red-50 text-red-500 text-[10px] px-5 py-2 rounded-full font-black sm:opacity-0 group-hover:opacity-100 transition-all">刪除</button>
                     </div>
                   );
                 })}
@@ -380,17 +369,6 @@ export default function AdminPage() {
           </div>
         )}
       </AnimatePresence>
-
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
-      `}</style>
     </div>
   );
 }
-
-// 輔助函數 (因篇幅完整補齊)
-async function handleUnbind(seatId: string, uid: string) { /* 代碼同上篇，保留邏輯 */ }
-async function handleManualBind(seatId: string) { /* 代碼同上篇，保留邏輯 */ }
