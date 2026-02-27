@@ -9,19 +9,15 @@ import { useRouter } from "next/navigation";
 export default function LoginPage() {
   const router = useRouter();
   
-  // 🚀 新增：一進網站時的「偷偷檢查」狀態
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
-  
   const [step, setStep] = useState<"login" | "bind">("login");
   const [seatNumber, setSeatNumber] = useState("");
   const [tempUser, setTempUser] = useState<any>(null);
 
-  // 🚀 核心修復：自動刷臉通關機制
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // Firebase 發現這個人已經登入過！直接去查權限
         const userRef = doc(db, "users", user.uid);
         const userSnap = await getDoc(userRef);
 
@@ -36,12 +32,10 @@ export default function LoginPage() {
             return;
           }
         }
-        // 如果有帳號但資料不全，跳到綁定頁面
         setTempUser(user);
         setStep("bind");
         setIsCheckingAuth(false);
       } else {
-        // 確實沒有登入紀錄，關閉檢查畫面，顯示 Google 登入按鈕
         setIsCheckingAuth(false);
       }
     });
@@ -114,7 +108,7 @@ export default function LoginPage() {
 
       if (studentData.bound_uid && studentData.bound_uid !== tempUser.uid) {
         setLoading(false);
-        return alert("❌ 此座號已被其他 Google 帳號綁定！如果您選錯了，請聯絡老師。");
+        return alert("❌ 此座號已被其他帳號綁定！");
       }
 
       await updateDoc(studentRef, {
@@ -140,13 +134,16 @@ export default function LoginPage() {
     }
   };
 
-  // 🚀 如果系統還在檢查登入狀態，顯示過場動畫，不讓學生看到按鈕
+  // 🚀 高質感轉圈圈動畫
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100 flex items-center justify-center p-6">
-        <div className="flex flex-col items-center gap-4 animate-pulse">
-          <img src="/logo.png" alt="TerryEdu" className="w-16 h-16 drop-shadow-md" onError={(e) => e.currentTarget.style.display = 'none'} />
-          <div className="text-indigo-600 font-bold text-lg tracking-widest">確認身分中...</div>
+        <div className="flex flex-col items-center gap-5">
+          <svg className="animate-spin h-12 w-12 text-indigo-600 drop-shadow-sm" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <div className="text-indigo-600 font-bold text-lg tracking-widest animate-pulse">確認身分中...</div>
         </div>
       </div>
     );
@@ -154,7 +151,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100 flex items-center justify-center p-6">
-      <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-10 shadow-2xl w-full max-w-md flex flex-col items-center animate-in fade-in zoom-in">
+      <div className="bg-white/60 backdrop-blur-xl border border-white rounded-[3rem] p-8 md:p-10 shadow-2xl w-full max-w-md flex flex-col items-center animate-in fade-in zoom-in">
         
         <img src="/logo.png" alt="TerryEdu Logo" className="w-20 h-20 mb-6 drop-shadow-md" onError={(e) => e.currentTarget.style.display = 'none'} />
         <h1 className="text-2xl font-bold text-indigo-900 mb-8 tracking-wide">登入 TerryEdu</h1>
@@ -184,7 +181,7 @@ export default function LoginPage() {
               type="number" 
               value={seatNumber} 
               onChange={(e) => setSeatNumber(e.target.value)} 
-              placeholder="請輸入您的座號 (例如: 5)" 
+              placeholder="請輸入座號 (例如: 5)" 
               className="w-full bg-white/50 border border-gray-300 rounded-[2rem] px-6 py-4 text-center font-bold text-lg outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
             />
 
@@ -201,7 +198,6 @@ export default function LoginPage() {
             </button>
           </div>
         )}
-
       </div>
     </div>
   );
