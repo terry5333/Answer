@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, Upload, Users, BarChart3, Book, AlertTriangle } from "lucide-react";
+import { RefreshCw, Upload, Users, BarChart3, Book, AlertTriangle, Edit2, Eye, Link, Unlink } from "lucide-react";
 
 const COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#60a5fa'];
 
@@ -59,14 +59,12 @@ export default function AdminPage() {
     } catch (e) { console.error(e); }
   };
 
-  // 🚀 深度校正：強制從資料庫總清點所有紀錄
   const handleDataRepair = async () => {
-    if (!confirm("確定執行「深度校正」？這將強制對齊資料庫內的所有瀏覽紀錄。")) return;
+    if (!confirm("確定執行「強制校正」？這將重新統計資料庫內所有紀錄。")) return;
     setLoading(true);
     try {
       const logSnap = await getDocs(collection(db, "view_logs"));
       const solSnap = await getDocs(collection(db, "solutions"));
-      
       const allLogs = logSnap.docs.map(d => d.data());
       const allSols = solSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -121,6 +119,37 @@ export default function AdminPage() {
     } catch (error: any) { alert("上傳失敗"); } finally { setIsUploading(false); }
   };
 
+  const handleUpdateName = async (seatId: string, oldName: string) => {
+    const newName = prompt(`修改 ${seatId} 號學生的姓名：`, oldName);
+    if (!newName || newName.trim() === oldName) return;
+    try {
+      await updateDoc(doc(db, "students", seatId), { name: newName.trim() });
+      await fetchAdminData();
+    } catch (e) { alert("修改姓名失敗"); }
+  };
+
+  const handleManualBind = async (seatId: string) => {
+    const uid = prompt(`輸入 ${seatId} 號學生的 Google UID：\n(可在 Firebase Authentication 後台查詢)`);
+    if (!uid) return;
+    try {
+      await updateDoc(doc(db, "students", seatId), { bound_uid: uid.trim() });
+      await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(seatId) }, { merge: true });
+      await fetchAdminData();
+      alert("✅ 手動綁定成功！");
+    } catch (e) { alert("綁定失敗"); }
+  };
+
+  const handleUnbind = async (seatId: string, uid: string) => {
+    if (!confirm(`確定要解除 ${seatId} 號學生的 Google 綁定嗎？`)) return;
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "students", seatId), { bound_uid: null, bound_email: null, photo_url: null });
+      batch.delete(doc(db, "users", uid));
+      await batch.commit();
+      await fetchAdminData();
+    } catch (e) { alert("解除綁定失敗"); }
+  };
+
   const sortedSolutions = [...solutions].sort((a, b) => 
     sortMethod === "subject" ? a.subject.localeCompare(b.subject, 'zh-TW') : 0
   );
@@ -139,7 +168,6 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-8 pb-24 relative overflow-hidden text-slate-800">
       
-      {/* 🔮 背景 */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <motion.div animate={{ x: [0, 80, 0], y: [0, 50, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-200/30 blur-[120px] rounded-full" />
         <motion.div animate={{ x: [0, -100, 0], y: [0, 80, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} className="absolute -bottom-[10%] -right-[10%] w-[60%] h-[60%] bg-teal-100/30 blur-[120px] rounded-full" />
@@ -147,22 +175,15 @@ export default function AdminPage() {
 
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
         
-        {/* 🔥 Header (校正按鈕釘在這裡！) */}
+        {/* Header：拿掉閃爍按鈕，回歸清爽 */}
         <motion.div initial={{ y: -30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white/70 backdrop-blur-xl border border-white rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black">T</div>
             <h1 className="text-xl font-black tracking-tight hidden sm:block">TerryEdu Admin</h1>
           </div>
-          <div className="flex items-center gap-3">
-            {/* 🔴 終極校正按鈕 */}
-            <button onClick={handleDataRepair} className="flex items-center gap-1 bg-red-500 text-white px-5 py-2.5 rounded-full font-bold shadow-lg text-sm animate-pulse border-2 border-red-300 active:scale-95">
-              <AlertTriangle className="w-4 h-4" /> 強制校正
-            </button>
-            <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-slate-200 text-slate-600 px-6 py-2.5 rounded-full font-bold shadow-sm text-sm hover:bg-slate-300">登出</button>
-          </div>
+          <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-slate-200 text-slate-600 px-6 py-2.5 rounded-full font-bold shadow-sm text-sm hover:bg-slate-300">登出</button>
         </motion.div>
 
-        {/* Navbar */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center gap-2 bg-white/70 backdrop-blur-md p-2 rounded-full shadow-lg sticky top-4 z-40 border border-white/50">
           {[
             { id: "solutions", label: "解答", icon: <Book className="w-4 h-4"/>, color: "bg-indigo-600" },
@@ -249,16 +270,42 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* ...其餘 Tabs 保留原有顯示 */}
               {activeTab === "students" && (
-                <div className="bg-white/70 backdrop-blur-lg p-10 rounded-[3.5rem] shadow-xl border border-white">
-                  <h2 className="text-xl font-black mb-10 text-center">學生身分綁定管理</h2>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+                <div className="bg-white/70 backdrop-blur-lg p-8 md:p-12 rounded-[3.5rem] shadow-xl border border-white">
+                  <h2 className="text-xl font-black mb-10 text-center flex items-center justify-center gap-3">
+                    <Users className="w-6 h-6 text-teal-600" /> 學生中心與權限管理
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {students.map(student => (
-                      <div key={student.id} className="bg-white/90 p-6 rounded-[2.5rem] flex flex-col items-center shadow-lg border border-white group hover:-translate-y-1 transition-all">
-                        <img src={student.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.name}`} className="w-16 h-16 rounded-full border-4 border-white shadow-md mb-4" />
-                        <div className="font-black text-gray-800 text-sm">{student.name}</div>
-                        <span className={`text-[10px] font-bold mt-2 ${student.bound_uid ? 'text-green-500' : 'text-slate-300'}`}>{student.bound_uid ? '● 已連動' : '○ 未連動'}</span>
+                      <div key={student.id} className="bg-white/90 p-6 rounded-[2.5rem] flex flex-col items-center shadow-lg border border-white relative hover:-translate-y-1 transition-all">
+                        
+                        <div className="relative mb-4">
+                          <img src={student.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.name}`} className="w-16 h-16 rounded-full border-4 border-white shadow-md" referrerPolicy="no-referrer" />
+                          <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white">{student.seat_number}</div>
+                        </div>
+
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className="font-black text-gray-800 text-base">{student.name}</div>
+                          <button onClick={() => handleUpdateName(student.id, student.name)} className="text-slate-300 hover:text-indigo-500 transition-colors" title="修改姓名">
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="flex flex-col w-full gap-2 border-t border-slate-100 pt-4 mt-auto">
+                          <button onClick={() => setSelectedStudent(student)} className="flex items-center justify-center gap-1.5 bg-slate-50 text-slate-600 text-[10px] font-bold py-2.5 rounded-full hover:bg-slate-800 hover:text-white transition-colors w-full shadow-sm">
+                            <Eye className="w-3 h-3" /> 查看觀看紀錄
+                          </button>
+                          {student.bound_uid ? (
+                            <button onClick={() => handleUnbind(student.id, student.bound_uid)} className="flex items-center justify-center gap-1.5 bg-red-50 text-red-500 text-[10px] font-bold py-2.5 rounded-full hover:bg-red-500 hover:text-white transition-colors w-full shadow-sm">
+                              <Unlink className="w-3 h-3" /> 解除 Google 連動
+                            </button>
+                          ) : (
+                            <button onClick={() => handleManualBind(student.id)} className="flex items-center justify-center gap-1.5 bg-teal-50 text-teal-600 text-[10px] font-bold py-2.5 rounded-full hover:bg-teal-500 hover:text-white transition-colors w-full shadow-sm border border-teal-100">
+                              <Link className="w-3 h-3" /> 手動綁定 UID
+                            </button>
+                          )}
+                        </div>
+
                       </div>
                     ))}
                   </div>
@@ -267,28 +314,37 @@ export default function AdminPage() {
 
               {activeTab === "reports" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* 📊 這裡！強制校正按鈕搬到刷新按鈕旁邊了 */}
                   <div className="bg-white/70 backdrop-blur-lg p-10 rounded-[3.5rem] shadow-xl border border-white h-[450px] flex flex-col items-center">
                     <div className="flex justify-between w-full mb-6">
                       <h2 className="text-lg font-black flex items-center gap-2"><BarChart3 className="w-5 h-5"/> 熱度分析</h2>
-                      <button onClick={fetchAdminData} className="flex items-center gap-1 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold active:scale-95 transition-all">
-                        <RefreshCw className="w-3 h-3"/> 刷新
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={fetchAdminData} className="flex items-center gap-1 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold active:scale-95 transition-all shadow-sm">
+                          <RefreshCw className="w-3 h-3"/> 刷新
+                        </button>
+                        <button onClick={handleDataRepair} className="flex items-center gap-1 bg-red-50 text-red-600 px-4 py-2 rounded-full text-[10px] font-bold active:scale-95 transition-all border border-red-100 shadow-sm hover:bg-red-100">
+                          <AlertTriangle className="w-3 h-3" /> 強制校正
+                        </button>
+                      </div>
                     </div>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>
                           {subjectChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
-                        <Tooltip />
-                        <Legend />
+                        <Tooltip contentStyle={{ borderRadius: '2rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }} />
+                        <Legend iconType="circle" />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="bg-white/70 backdrop-blur-lg p-10 rounded-[3.5rem] shadow-xl border border-white overflow-y-auto max-h-[450px]">
+                  <div className="bg-white/70 backdrop-blur-lg p-10 rounded-[3.5rem] shadow-xl border border-white overflow-y-auto max-h-[450px] custom-scrollbar">
                     <h2 className="text-lg font-black mb-8">🔥 熱門解答排行</h2>
                     {[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,8).map((sol, i) => (
-                      <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 rounded-[2rem] mb-4 shadow-sm">
-                        <span className="font-black text-gray-700 text-sm">{i+1}. {sol.title}</span>
+                      <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 rounded-[2rem] mb-4 shadow-sm border border-white/50 group hover:bg-white">
+                        <span className="font-black text-gray-700 text-sm flex items-center">
+                          <span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-orange-300' : 'bg-indigo-300'}`}>{i+1}</span>
+                          {sol.title}
+                        </span>
                         <span className="text-indigo-600 font-black bg-indigo-50 px-4 py-1 rounded-full text-xs">{sol.view_count || 0}</span>
                       </div>
                     ))}
@@ -300,6 +356,54 @@ export default function AdminPage() {
           </AnimatePresence>
         )}
       </div>
+
+      {/* 紀錄 Modal */}
+      <AnimatePresence>
+        {selectedStudent && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedStudent(null)} className="absolute inset-0 bg-slate-900/20 backdrop-blur-md" />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white/95 backdrop-blur-2xl rounded-[3.5rem] p-8 md:p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative z-10">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b">
+                <div className="flex items-center gap-4">
+                  <img src={selectedStudent.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white shadow-md" referrerPolicy="no-referrer" />
+                  <h3 className="text-xl font-black">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3>
+                </div>
+                <button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 rounded-full font-black hover:bg-slate-200">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 space-y-3 custom-scrollbar pr-2">
+                {viewLogs.filter(l => l.seat_number === selectedStudent.seat_number).map(log => {
+                  const s = solutions.find(sol => sol.id === log.solution_id);
+                  return (
+                    <div key={log.id} className="group bg-white/70 p-5 rounded-[2rem] flex justify-between items-center border border-white shadow-sm hover:bg-white">
+                      <div className="flex flex-col">
+                        <span className="font-black text-gray-700 text-sm">{s ? s.title : "已刪除"}</span>
+                        <span className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span>
+                      </div>
+                      <button onClick={() => {
+                        if(confirm("確定刪除並扣回次數？")) {
+                          const b = writeBatch(db);
+                          b.delete(doc(db,"view_logs",log.id));
+                          b.update(doc(db,"solutions",log.solution_id), {view_count: increment(-1)});
+                          b.commit().then(fetchAdminData);
+                        }
+                      }} className="bg-red-50 text-red-500 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all active:scale-95">刪除</button>
+                    </div>
+                  );
+                })}
+                {viewLogs.filter(l => l.seat_number === selectedStudent.seat_number).length === 0 && (
+                  <div className="text-center py-20 text-gray-400 font-medium italic">目前尚無紀錄</div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+      `}</style>
     </div>
   );
 }
