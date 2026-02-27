@@ -156,20 +156,14 @@ export default function AdminPage() {
     } catch (e) { alert("解除綁定失敗"); }
   };
 
-  // 🚀 修復：加入防呆機制的刪除紀錄邏輯
   const handleDeleteLog = async (logId: string, solutionId: string) => {
     if (!confirm("確定刪除此紀錄？（若解答仍在，將自動扣除觀看次數）")) return;
     try {
       const batch = writeBatch(db);
-      
-      // 1. 刪除紀錄本身
       batch.delete(doc(db, "view_logs", logId));
-      
-      // 2. 防呆檢查：只有解答還存在時，才去扣除 view_count
       if (solutions.some(s => s.id === solutionId)) {
         batch.update(doc(db, "solutions", solutionId), { view_count: increment(-1) });
       }
-      
       await batch.commit();
       await fetchAdminData();
     } catch (e) { 
@@ -369,10 +363,11 @@ export default function AdminPage() {
                         <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>
                           {subjectChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
+                        {/* 🚀 修正這裡：統一使用 resolvedTheme */}
                         <Tooltip contentStyle={{ 
                           borderRadius: '2rem', border: 'none', 
-                          backgroundColor: theme === 'dark' ? '#1e293b' : 'rgba(255, 255, 255, 0.9)', 
-                          color: theme === 'dark' ? '#f8fafc' : '#334155',
+                          backgroundColor: resolvedTheme === 'dark' ? '#1e293b' : 'rgba(255, 255, 255, 0.9)', 
+                          color: resolvedTheme === 'dark' ? '#f8fafc' : '#334155',
                           boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' 
                         }} />
                         <Legend iconType="circle" />
@@ -420,7 +415,6 @@ export default function AdminPage() {
                         <span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除"}</span>
                         <span className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span>
                       </div>
-                      {/* 🚀 這裡已經改成使用最新的防呆刪除函數！ */}
                       <button onClick={() => handleDeleteLog(log.id, log.solution_id)} className="bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all active:scale-95">刪除</button>
                     </div>
                   );
