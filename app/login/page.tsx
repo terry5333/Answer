@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { auth, db, provider } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -17,7 +16,7 @@ const MaintenanceScreen = () => (
       <p className="text-slate-400 font-bold mb-10 leading-relaxed text-sm">TerryEdu 目前正在進行核心升級。<br/>為了確保數據安全，暫時關閉存取權限。</p>
       <div className="py-2.5 px-8 bg-slate-800/50 rounded-full inline-flex items-center gap-2 border border-slate-700">
         <div className="w-2 h-2 bg-orange-500 rounded-full animate-ping" />
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Maintenance Active</span>
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Maintenance Active</span>
       </div>
     </motion.div>
   </div>
