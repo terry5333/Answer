@@ -12,11 +12,10 @@ import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, Upload, Users, BarChart3, Book, AlertTriangle, Edit2, Eye, Link, Unlink, Sun, Moon, BookOpen } from "lucide-react";
+import { RefreshCw, Upload, Users, BarChart3, Book, AlertTriangle, Edit2, Eye, Link, Unlink, Sun, Moon, BookOpen, ShieldCheck, Settings } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#60a5fa'];
-
 const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
 const itemVariants = { hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
@@ -26,6 +25,12 @@ export default function AdminPage() {
   const [solutions, setSolutions] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [viewLogs, setViewLogs] = useState<any[]>([]);
+  
+  // 🚀 維護模式相關狀態
+  const [maintenance, setMaintenance] = useState({ active: false, testers: [] as number[] });
+  const [showTesterModal, setShowTesterModal] = useState(false);
+  const [selectedTesters, setSelectedTesters] = useState<number[]>([]);
+
   const [newSubject, setNewSubject] = useState(""); 
   const [isVerified, setIsVerified] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
@@ -46,6 +51,7 @@ export default function AdminPage() {
       const snap = await getDoc(userRef);
       if (!snap.exists() || snap.data().role !== "teacher") { router.push("/dashboard"); return; }
       await fetchAdminData();
+      await fetchMaintenanceStatus();
       setLoading(false);
     });
     return () => unsubscribe();
@@ -64,6 +70,33 @@ export default function AdminPage() {
     } catch (e) { console.error(e); }
   };
 
+  const fetchMaintenanceStatus = async () => {
+    const snap = await getDoc(doc(db, "settings", "maintenance"));
+    if (snap.exists()) {
+      setMaintenance(snap.data() as any);
+      setSelectedTesters(snap.data().testers || []);
+    }
+  };
+
+  // 🚀 保存維護設定
+  const toggleMaintenance = async (active: boolean) => {
+    if (active) {
+      setShowTesterModal(true);
+    } else {
+      if (!confirm("確定要關閉維護模式，讓全體學生恢復使用嗎？")) return;
+      await setDoc(doc(db, "settings", "maintenance"), { active: false, testers: [] });
+      setMaintenance({ active: false, testers: [] });
+      setSelectedTesters([]);
+    }
+  };
+
+  const saveMaintenanceConfig = async () => {
+    await setDoc(doc(db, "settings", "maintenance"), { active: true, testers: selectedTesters });
+    setMaintenance({ active: true, testers: selectedTesters });
+    setShowTesterModal(false);
+    alert("✅ 維護模式已啟動，僅限選中人員訪問。");
+  };
+
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsUploading(true);
@@ -77,13 +110,11 @@ export default function AdminPage() {
       reader.readAsDataURL(file);
       reader.onload = async () => {
         try {
-          // 🚀 改為呼叫我們自己的 API
           const res = await fetch('/api/upload', {
             method: "POST",
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fileName: file.name, base64: reader.result }),
           });
-
           const data = await res.json();
           if (data.status === 'success') {
             await addDoc(collection(db, "solutions"), {
@@ -103,34 +134,6 @@ export default function AdminPage() {
     setViewingPreviewUrl(url);
   };
 
-  const handleDataRepair = async () => {
-    if (!confirm("確定執行「強制校正」？")) return;
-    setLoading(true);
-    try {
-      const logSnap = await getDocs(collection(db, "view_logs"));
-      const solSnap = await getDocs(collection(db, "solutions"));
-      const batch = writeBatch(db);
-      const countsMap: { [key: string]: number } = {};
-      solSnap.docs.forEach(d => countsMap[d.id] = 0);
-      logSnap.docs.forEach(d => { if (countsMap[d.data().solution_id] !== undefined) countsMap[d.data().solution_id]++; });
-      for (const id in countsMap) { batch.update(doc(db, "solutions", id), { view_count: countsMap[id] }); }
-      await batch.commit();
-      await fetchAdminData();
-      alert("✅ 校正完成");
-    } catch (e) { alert("失敗"); } finally { setLoading(false); }
-  };
-
-  const handleManualBind = async (seatId: string) => {
-    const uid = prompt(`輸入 ${seatId} 號學生的 UID：`);
-    if (!uid) return;
-    try {
-      await updateDoc(doc(db, "students", seatId), { bound_uid: uid.trim() });
-      await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(seatId) }, { merge: true });
-      await fetchAdminData();
-      alert("✅ 綁定成功");
-    } catch (e) { alert("失敗"); }
-  };
-
   const sortedSolutions = [...solutions].sort((a, b) => sortMethod === "subject" ? a.subject.localeCompare(b.subject, 'zh-TW') : 0);
   const chartData = subjects.map(s => ({ name: s.name, value: solutions.filter(sol => sol.subject === s.name).reduce((sum, sol) => sum + (sol.view_count || 0), 0) })).filter(d => d.value > 0);
 
@@ -138,6 +141,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950/80 p-4 md:p-8 pb-24 text-slate-800 dark:text-slate-100 transition-colors duration-500">
+      
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
         <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl transition-colors">
           <div className="flex items-center gap-4"><div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black">T</div><h1 className="text-xl font-black hidden sm:block">TerryEdu Admin</h1></div>
@@ -158,23 +162,24 @@ export default function AdminPage() {
         ) : (
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}>
+              
               {activeTab === "solutions" && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 h-fit">
                     <h2 className="text-lg font-black mb-6 flex items-center gap-2">科目設定</h2>
-                    <div className="flex gap-2 mb-6"><input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white dark:bg-slate-800 outline-none text-sm" /><button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold shadow-lg">+</button></div>
+                    <div className="flex gap-2 mb-6"><input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white dark:bg-slate-800 outline-none text-sm shadow-inner transition-colors" /><button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold shadow-lg">+</button></div>
                     <div className="space-y-2">{subjects.map(s => <div key={s.id} className="flex justify-between bg-white/80 dark:bg-slate-800/80 px-6 py-3 rounded-2xl font-bold border dark:border-slate-700">{s.name}<button onClick={() => deleteDoc(doc(db,"subjects",s.id)).then(fetchAdminData)} className="text-red-300">✕</button></div>)}</div>
                   </div>
                   <div className="lg:col-span-2 flex flex-col gap-6">
-                    <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50">
+                    <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
                       <h2 className="text-lg font-black mb-6 flex items-center gap-2"><Upload size={20}/> 上傳新解答</h2>
                       <form onSubmit={handleUpload} className="flex flex-col sm:flex-row gap-4 items-center">
-                        <select name="subject" required className="w-full sm:w-1/3 bg-white dark:bg-slate-800 rounded-full px-5 py-3 font-bold text-sm shadow-inner"><option value="">選擇科目</option>{subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
-                        <input name="title" required placeholder="解答標題" className="flex-1 w-full bg-white dark:bg-slate-800 rounded-full px-6 py-3 font-bold text-sm shadow-inner" /><div className="flex items-center gap-2 w-full sm:w-auto"><input type="file" name="file" required className="text-[10px] flex-1"/><button disabled={isUploading} className="bg-indigo-600 text-white font-black py-3 px-8 rounded-full shadow-lg disabled:opacity-50 text-sm">{isUploading ? "..." : "發佈"}</button></div>
+                        <select name="subject" required className="w-full sm:w-1/3 bg-white dark:bg-slate-800 rounded-full px-5 py-3 font-bold text-sm shadow-inner transition-colors"><option value="">選擇科目</option>{subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
+                        <input name="title" required placeholder="解答標題" className="flex-1 w-full bg-white dark:bg-slate-800 rounded-full px-6 py-3 font-bold text-sm shadow-inner transition-colors" /><div className="flex items-center gap-2 w-full sm:w-auto"><input type="file" name="file" required className="text-[10px] flex-1"/><button disabled={isUploading} className="bg-indigo-600 text-white font-black py-3 px-8 rounded-full shadow-lg disabled:opacity-50 text-sm">{isUploading ? "..." : "發佈"}</button></div>
                       </form>
                     </div>
-                    <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50">
-                      <div className="flex justify-between items-center mb-6"><h2 className="text-lg font-black">📚 解答資料庫</h2><select value={sortMethod} onChange={e => setSortMethod(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2 rounded-full font-bold text-[10px] border dark:border-slate-700 shadow-sm"><option value="time">最新上傳</option><option value="subject">科目排序</option></select></div>
+                    <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
+                      <div className="flex justify-between items-center mb-6"><h2 className="text-lg font-black">📚 解答資料庫</h2><select value={sortMethod} onChange={e => setSortMethod(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2 rounded-full font-bold text-[10px] border dark:border-slate-700 shadow-sm transition-colors"><option value="time">最新上傳</option><option value="subject">科目排序</option></select></div>
                       <div className="space-y-3">{sortedSolutions.map(sol => (
                         <div key={sol.id} className="flex justify-between items-center bg-white/80 dark:bg-slate-800/80 px-8 py-5 rounded-[2.5rem] shadow-sm border border-white dark:border-slate-700/50 group hover:bg-white/95 transition-all">
                           <span className="font-bold text-sm"><span className="text-indigo-500 mr-3 text-[10px] bg-indigo-50 px-2 py-1 rounded-full">[{sol.subject}]</span>{sol.title}</span>
@@ -187,33 +192,78 @@ export default function AdminPage() {
               )}
 
               {activeTab === "students" && (
-                <div className="bg-white/70 dark:bg-slate-900/50 p-8 md:p-12 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50">
-                  <h2 className="text-xl font-black mb-10 text-center flex items-center justify-center gap-3"><Users size={24} className="text-teal-600" /> 學生中心</h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">{students.map(s => (
-                    <div key={s.id} className="bg-white/90 dark:bg-slate-800/90 p-6 rounded-[2.5rem] flex flex-col items-center shadow-lg border border-white dark:border-slate-700/50 relative">
-                      <div className="relative mb-4"><img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-16 h-16 rounded-full border-4 border-white shadow-md" /><div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white">{s.seat_number}</div></div>
-                      <div className="flex items-center gap-2 mb-4"><div className="font-black text-gray-800 dark:text-slate-100">{s.name}</div><button onClick={() => { const n = prompt("改名：", s.name); if(n) updateDoc(doc(db,"students",s.id),{name:n}).then(fetchAdminData); }} className="text-slate-300 hover:text-indigo-500"><Edit2 size={14}/></button></div>
-                      <div className="flex flex-col w-full gap-2 border-t pt-4 mt-auto">
-                        <button onClick={() => setSelectedStudent(s)} className="flex items-center justify-center gap-1.5 bg-slate-50 dark:bg-slate-700/50 text-slate-600 text-[10px] font-bold py-2.5 rounded-full hover:bg-slate-800 hover:text-white transition-colors shadow-sm"><Eye size={12}/> 查看紀錄</button>
-                        {s.bound_uid ? <button onClick={() => { if(confirm("解除？")) writeBatch(db).update(doc(db,"students",s.id),{bound_uid:null,bound_email:null,photo_url:null}).delete(doc(db,"users",s.bound_uid)).commit().then(fetchAdminData); }} className="bg-red-50 text-red-500 text-[10px] font-bold py-2.5 rounded-full hover:bg-red-500 hover:text-white transition-colors"><Unlink size={12}/> 解除連動</button> : <button onClick={() => handleManualBind(s.id)} className="bg-teal-50 text-teal-600 text-[10px] font-bold py-2.5 rounded-full hover:bg-teal-500 hover:text-white transition-colors border border-teal-100"><Link size={12}/> 手動綁定</button>}
+                <div className="flex flex-col gap-8">
+                  {/* 🚀 維護模式控制台 */}
+                  <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-4 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-2xl ${maintenance.active ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                        <ShieldCheck size={24} />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-sm">系統維護開關</h3>
+                        <p className="text-[10px] text-slate-500">當前狀態：{maintenance.active ? `維護中 (已允許 ${maintenance.testers.length} 名測試員)` : '正常運作中'}</p>
                       </div>
                     </div>
-                  ))}</div>
+                    <button 
+                      onClick={() => toggleMaintenance(!maintenance.active)}
+                      className={`px-8 py-3 rounded-full font-black text-xs shadow-lg transition-all ${maintenance.active ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-orange-500 text-white hover:bg-orange-600'}`}
+                    >
+                      {maintenance.active ? '關閉維護' : '啟動維護'}
+                    </button>
+                  </div>
+
+                  {/* 🚀 學生清單 (修復 UI 跑版) */}
+                  <div className="bg-white/70 dark:bg-slate-900/50 p-8 md:p-12 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
+                    <h2 className="text-xl font-black mb-10 text-center flex items-center justify-center gap-3"><Users size={24} className="text-teal-600" /> 學生中心</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      {students.map(s => (
+                        <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center shadow-lg border-2 transition-all relative ${maintenance.active && maintenance.testers.includes(s.seat_number) ? 'border-orange-400' : 'border-transparent'}`}>
+                          
+                          {/* 修正 Badge 位置與尺寸 */}
+                          <div className="relative mb-6">
+                            <img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-700 shadow-xl" referrerPolicy="no-referrer" />
+                            <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[10px] font-black w-7 h-7 flex items-center justify-center rounded-full border-2 border-white dark:border-slate-700 shadow-md">
+                              {s.seat_number}
+                            </div>
+                            {maintenance.active && maintenance.testers.includes(s.seat_number) && (
+                              <div className="absolute -top-2 -left-2 bg-orange-500 text-white p-1.5 rounded-full shadow-lg">
+                                <ShieldCheck size={12} />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 mb-6">
+                            <div className="font-black text-lg text-slate-800 dark:text-slate-100">{s.name}</div>
+                            <button onClick={() => { const n = prompt("改名：", s.name); if(n) updateDoc(doc(db,"students",s.id),{name:n}).then(fetchAdminData); }} className="text-slate-300 dark:text-slate-500 hover:text-indigo-500 transition-colors"><Edit2 size={16}/></button>
+                          </div>
+
+                          <div className="flex flex-col w-full gap-2 border-t dark:border-slate-700 pt-6 mt-auto">
+                            <button onClick={() => setSelectedStudent(s)} className="flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-200 text-xs font-bold py-3 rounded-full hover:bg-slate-800 hover:text-white transition-all shadow-sm"><Eye size={14}/> 觀看紀錄</button>
+                            {s.bound_uid ? (
+                              <button onClick={() => { if(confirm("確定解除連動？")) writeBatch(db).update(doc(db,"students",s.id),{bound_uid:null,bound_email:null,photo_url:null}).delete(doc(db,"users",s.bound_uid)).commit().then(fetchAdminData); }} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-xs font-bold py-3 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm">解除連動</button>
+                            ) : (
+                              <button onClick={() => handleManualBind(s.id)} className="bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-bold py-3 rounded-full hover:bg-teal-500 hover:text-white transition-all border border-teal-100 dark:border-teal-500/30">手動綁定</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
               {activeTab === "reports" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 h-[450px] flex flex-col items-center">
-                    <div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 熱度分析</h2><div className="flex gap-2"><button onClick={fetchAdminData} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm"><RefreshCw size={12}/> 刷新</button><button onClick={handleDataRepair} className="bg-red-50 text-red-600 px-4 py-2 rounded-full text-[10px] font-bold border border-red-100 shadow-sm"><AlertTriangle size={12} /> 強制校正</button></div></div>
+                    <div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 熱度分析</h2><div className="flex gap-2"><button onClick={fetchAdminData} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm"><RefreshCw size={12}/> 刷新</button></div></div>
                     <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>{chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip contentStyle={{ borderRadius: '2rem', border: 'none' }} /><Legend iconType="circle" /></PieChart></ResponsiveContainer>
                   </div>
                   <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 overflow-y-auto max-h-[450px]">
-                    <h2 className="text-lg font-black mb-8">🔥 熱門解答排行</h2>
+                    <h2 className="text-lg font-black mb-8 text-slate-800 dark:text-slate-100">🔥 熱門解答排行</h2>
                     {[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,8).map((sol, i) => (
-                      <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 dark:bg-slate-800/60 rounded-[2rem] mb-4 shadow-sm border border-white/50 group hover:bg-white transition-colors">
+                      <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 dark:bg-slate-800/60 rounded-[2rem] mb-4 shadow-sm border border-white/50 group hover:bg-white dark:hover:bg-slate-800 transition-colors">
                         <span className="font-black text-gray-700 dark:text-slate-200 text-sm flex items-center"><span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-orange-300' : 'bg-indigo-300'}`}>{i+1}</span>{sol.title}</span>
-                        <span className="text-indigo-600 font-black bg-indigo-50 px-4 py-1 rounded-full text-xs">{sol.view_count || 0}</span>
+                        <span className="text-indigo-600 font-black bg-indigo-50 dark:bg-indigo-500/10 px-4 py-1 rounded-full text-xs">{sol.view_count || 0}</span>
                       </div>
                     ))}
                   </div>
@@ -223,6 +273,38 @@ export default function AdminPage() {
           </AnimatePresence>
         )}
       </div>
+
+      {/* 🚀 測試員挑選視窗 */}
+      <AnimatePresence>
+        {showTesterModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowTesterModal(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-8 w-full max-w-2xl shadow-2xl relative z-10 border dark:border-slate-700">
+              <h3 className="text-xl font-black mb-2 flex items-center gap-2 text-orange-500">< ShieldCheck /> 設定測試人員</h3>
+              <p className="text-xs text-slate-500 mb-6 font-bold">請點擊選擇在維護期間仍可訪問系統的學生：</p>
+              
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-3 max-h-[300px] overflow-y-auto p-2 mb-8">
+                {students.map(s => (
+                  <button
+                    key={s.seat_number}
+                    onClick={() => {
+                      setSelectedTesters(prev => prev.includes(s.seat_number) ? prev.filter(n => n !== s.seat_number) : [...prev, s.seat_number]);
+                    }}
+                    className={`h-12 rounded-2xl font-black text-sm transition-all border-2 ${selectedTesters.includes(s.seat_number) ? 'bg-orange-500 text-white border-orange-500 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-transparent hover:border-slate-300'}`}
+                  >
+                    {s.seat_number}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-4">
+                <button onClick={() => setShowTesterModal(false)} className="flex-1 py-4 rounded-full font-bold bg-slate-100 text-slate-600">取消</button>
+                <button onClick={saveMaintenanceConfig} className="flex-1 py-4 rounded-full font-bold bg-orange-500 text-white shadow-xl shadow-orange-500/20">啟動系統維護</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {selectedStudent && (
@@ -234,13 +316,12 @@ export default function AdminPage() {
                 {viewLogs.filter(l => l.seat_number === selectedStudent.seat_number).map(log => {
                   const s = solutions.find(sol => sol.id === log.solution_id);
                   return (
-                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border shadow-sm hover:bg-white transition-colors">
+                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border shadow-sm hover:bg-white dark:hover:bg-slate-800 transition-colors">
                       <div className="flex flex-col"><span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除"}</span><span className="text-[10px] text-gray-400 mt-1">{log.viewed_at?.toDate().toLocaleString()}</span></div>
                       <button onClick={() => { if(confirm("刪除？")) writeBatch(db).delete(doc(db,"view_logs",log.id)).update(doc(db,"solutions",log.solution_id),{view_count:increment(-1)}).commit().then(fetchAdminData); }} className="bg-red-50 text-red-500 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all">刪除</button>
                     </div>
                   );
                 })}
-                {viewLogs.filter(l => l.seat_number === selectedStudent.seat_number).length === 0 && <div className="text-center py-20 text-gray-400 italic">目前尚無紀錄</div>}
               </div>
             </motion.div>
           </div>
