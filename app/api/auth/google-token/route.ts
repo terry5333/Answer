@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
 
+// 🚀 就是這行！終極解藥：強制每次呼叫都重新執行，拒絕使用過期的快取 Token！
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
-    // 檢查有沒有抓到環境變數
     if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
       return NextResponse.json({ error: '伺服器缺少 Google 憑證' }, { status: 500 });
     }
@@ -11,7 +13,6 @@ export async function GET() {
     const auth = new GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        // 🚀 關鍵：Vercel 常常會把金鑰的換行符號吃掉，這裡幫你強制轉換回來
         private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       },
       scopes: ['https://www.googleapis.com/auth/drive.file'],
