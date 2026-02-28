@@ -44,7 +44,11 @@ export default function DashboardPage() {
         if (!uSnap.exists() || !uSnap.data().seat_number) {
            router.push("/login"); return; // 未綁定者退回 Login 完成綁定
         }
-
+// 偵測到是老師，直接送回後台
+if (uSnap.data().role === "teacher") {
+  router.push("/admin");
+  return;
+}
         const isT = uSnap.data().role === "teacher";
         const seat = uSnap.data().seat_number;
         if (mSnap.exists() && mSnap.data().active && !isT && !(mSnap.data().testers || []).includes(seat)) { setIsBlocked(true); setLoading(false); return; }
