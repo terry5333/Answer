@@ -10,7 +10,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun } from "lucide-react"; // 🚀 移除了 ExternalLink
+import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -54,15 +54,14 @@ export default function DashboardPage() {
     } catch (e) { console.error(e); }
   };
 
-  // 🚀 修復：同時支援新版 GAS 網址與舊版 Google Drive ID
   const handleViewSolution = async (sol: any) => {
     if (!userData) return;
 
     let targetUrl = "";
     if (sol.file_url) {
-      targetUrl = sol.file_url.replace(/\/view.*/, "/preview"); // 新版
+      targetUrl = sol.file_url.replace(/\/view.*/, "/preview");
     } else if (sol.drive_file_id) {
-      targetUrl = `https://drive.google.com/file/d/${sol.drive_file_id}/preview`; // 舊版
+      targetUrl = `https://drive.google.com/file/d/${sol.drive_file_id}/preview`;
     } else {
       alert("此解答檔案連結遺失，請聯絡老師。");
       return;
@@ -150,7 +149,6 @@ export default function DashboardPage() {
 
           <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
             {sortedSolutions.map(sol => (
-              {/* 🚀 改為傳入整個 sol 物件進行判斷 */}
               <motion.div key={sol.id} variants={itemVariants} whileHover={{ y: -5, scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleViewSolution(sol)} 
                 className="group bg-white/60 dark:bg-slate-900/50 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border border-white dark:border-slate-700/50 shadow-lg hover:shadow-2xl hover:bg-white/90 dark:hover:bg-slate-800/80 transition-all cursor-pointer relative overflow-hidden"
               >
@@ -171,7 +169,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 解答預覽 Modal */}
       <AnimatePresence>
         {viewingPreviewUrl && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-6 overflow-hidden">
@@ -184,7 +181,6 @@ export default function DashboardPage() {
                   <div className="p-2 bg-teal-50 dark:bg-teal-500/10 rounded-xl"><BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400" /></div>
                   <span className="font-black text-base md:text-lg text-slate-800 dark:text-slate-100">正在查閱解答</span>
                 </div>
-                {/* 🚀 乾淨的關閉按鈕，移除導外連結 */}
                 <motion.button whileHover={{ rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 dark:hover:bg-red-500 hover:text-white dark:text-slate-300 rounded-full font-bold transition-all">✕</motion.button>
               </div>
               <div className="flex-1 w-full bg-slate-200 dark:bg-slate-800 transition-colors">
