@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db } from "@/lib/firebase";
+import { auth, db, storage } from "@/lib/firebase"; // 🚀 引入 storage
 import { 
   collection, getDocs, doc, getDoc, query, orderBy, 
   addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, 
   writeBatch, increment 
 } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"; // 🚀 引入上傳工具
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -92,7 +93,7 @@ export default function AdminPage() {
     } catch (e) { alert("校正失敗"); } finally { setLoading(false); }
   };
 
-  // 🚀 終極診斷版 Upload
+  // 🚀 Firebase Storage 專屬的超快上傳邏輯
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsUploading(true);
@@ -100,60 +101,33 @@ export default function AdminPage() {
     const file = formData.get('file') as File;
     const subject = formData.get('subject') as string;
     const title = formData.get('title') as string;
-    const folderId = process.env.NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID;
 
     try {
-      // 🕵️‍♂️ 檢查點 1：資料夾 ID 是否存在？
-      if (!folderId) {
-        throw new Error("環境變數 NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID 沒有設定！");
-      }
-
-      // 🕵️‍♂️ 檢查點 2：前端有沒有成功呼叫後端 API？
-      const tokenRes = await fetch('/api/auth/google-token');
-      if (!tokenRes.ok) {
-        const errText = await tokenRes.text();
-        throw new Error(`後端 Token API 壞了 (狀態碼 ${tokenRes.status})\n${errText}`);
-      }
-
-      // 🕵️‍♂️ 檢查點 3：前端有沒有成功解析出 Token？
-      const tokenData = await tokenRes.json();
-      if (!tokenData.access_token) {
-        throw new Error(`後端沒有回傳 access_token！\n它回傳了：${JSON.stringify(tokenData)}`);
-      }
-
-      // 🚀 檢查點 4：正式跟 Google 交涉
-      const metadata = { name: file.name, parents: [folderId] };
-      const uploadFormData = new FormData();
-      uploadFormData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      uploadFormData.append('file', file);
-
-      const driveRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        body: uploadFormData,
-      });
-
-      // 🕵️‍♂️ 檢查點 5：Google 買不買單？
-      if (!driveRes.ok) {
-        const driveErr = await driveRes.text();
-        throw new Error(`Google 拒絕上傳 (狀態碼 ${driveRes.status})\n詳細原因：${driveErr}`);
-      }
-
-      const driveData = await driveRes.json();
+      // 1. 建立一個獨一無二的檔案路徑 (避免檔名重複被覆蓋)
+      const fileRef = ref(storage, `solutions/${Date.now()}_${file.name}`);
       
-      // ✅ 寫入 Firebase
+      // 2. 上傳檔案到 Firebase Storage
+      await uploadBytes(fileRef, file);
+      
+      // 3. 取得公開下載網址
+      const downloadURL = await getDownloadURL(fileRef);
+
+      // 4. 把網址存進 Firestore 資料庫
       await addDoc(collection(db, "solutions"), {
-        subject, title, drive_file_id: driveData.id, view_count: 0, created_at: serverTimestamp()
+        subject, 
+        title, 
+        file_url: downloadURL, // 💡 不再用 drive_file_id，改用 file_url
+        view_count: 0, 
+        created_at: serverTimestamp()
       });
       
       await fetchAdminData();
       (e.target as HTMLFormElement).reset();
-      alert("✅ 上傳成功！你擊敗魔王了！");
+      alert("✅ 閃電上傳成功！");
       
     } catch (error: any) {
       console.error("詳細上傳錯誤：", error);
-      // 🚨 這裡會直接彈出對話框，告訴我們死在哪一步
-      alert(`❌ 上傳失敗偵測報告：\n\n${error.message}`);
+      alert(`❌ 上傳失敗：\n\n${error.message}`);
     } finally {
       setIsUploading(false);
     }
