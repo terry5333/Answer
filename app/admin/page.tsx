@@ -92,6 +92,7 @@ export default function AdminPage() {
     } catch (e) { alert("校正失敗"); } finally { setLoading(false); }
   };
 
+  // 🚀 終極診斷版 Upload
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsUploading(true);
@@ -102,8 +103,25 @@ export default function AdminPage() {
     const folderId = process.env.NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID;
 
     try {
+      // 🕵️‍♂️ 檢查點 1：資料夾 ID 是否存在？
+      if (!folderId) {
+        throw new Error("環境變數 NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID 沒有設定！");
+      }
+
+      // 🕵️‍♂️ 檢查點 2：前端有沒有成功呼叫後端 API？
       const tokenRes = await fetch('/api/auth/google-token');
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text();
+        throw new Error(`後端 Token API 壞了 (狀態碼 ${tokenRes.status})\n${errText}`);
+      }
+
+      // 🕵️‍♂️ 檢查點 3：前端有沒有成功解析出 Token？
       const tokenData = await tokenRes.json();
+      if (!tokenData.access_token) {
+        throw new Error(`後端沒有回傳 access_token！\n它回傳了：${JSON.stringify(tokenData)}`);
+      }
+
+      // 🚀 檢查點 4：正式跟 Google 交涉
       const metadata = { name: file.name, parents: [folderId] };
       const uploadFormData = new FormData();
       uploadFormData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -115,14 +133,30 @@ export default function AdminPage() {
         body: uploadFormData,
       });
 
+      // 🕵️‍♂️ 檢查點 5：Google 買不買單？
+      if (!driveRes.ok) {
+        const driveErr = await driveRes.text();
+        throw new Error(`Google 拒絕上傳 (狀態碼 ${driveRes.status})\n詳細原因：${driveErr}`);
+      }
+
       const driveData = await driveRes.json();
+      
+      // ✅ 寫入 Firebase
       await addDoc(collection(db, "solutions"), {
         subject, title, drive_file_id: driveData.id, view_count: 0, created_at: serverTimestamp()
       });
+      
       await fetchAdminData();
       (e.target as HTMLFormElement).reset();
-      alert("✅ 上傳成功");
-    } catch (error: any) { alert("上傳失敗"); } finally { setIsUploading(false); }
+      alert("✅ 上傳成功！你擊敗魔王了！");
+      
+    } catch (error: any) {
+      console.error("詳細上傳錯誤：", error);
+      // 🚨 這裡會直接彈出對話框，告訴我們死在哪一步
+      alert(`❌ 上傳失敗偵測報告：\n\n${error.message}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleUpdateName = async (seatId: string, oldName: string) => {
@@ -363,7 +397,6 @@ export default function AdminPage() {
                         <Pie data={subjectChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>
                           {subjectChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
-                        {/* 🚀 修正這裡：統一使用 resolvedTheme */}
                         <Tooltip contentStyle={{ 
                           borderRadius: '2rem', border: 'none', 
                           backgroundColor: resolvedTheme === 'dark' ? '#1e293b' : 'rgba(255, 255, 255, 0.9)', 
