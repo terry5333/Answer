@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
 import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes"; // 🚀 引入主題控制
+import { useTheme } from "next-themes";
 
 const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } };
 const itemVariants = { hidden: { y: 25, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 260, damping: 20 } } };
@@ -24,7 +24,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [isVerified, setIsVerified] = useState(false);
   
-  // 🚀 關鍵修正：加入 resolvedTheme，精準抓取當前螢幕的顏色狀態
   const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
@@ -40,7 +39,6 @@ export default function DashboardPage() {
         alert("⚠️ 請先完成身分綁定！"); router.push("/login"); return;
       }
       const seatNumber = userSnap.data().seat_number;
-      // 確保抓到老師改的最新的名字
       const studentSnap = await getDoc(doc(db, "students", String(seatNumber)));
       setUserData({ ...userSnap.data(), name: studentSnap.exists() ? studentSnap.data().name : userSnap.data().name });
       await fetchSolutions();
@@ -56,8 +54,12 @@ export default function DashboardPage() {
     } catch (e) { console.error(e); }
   };
 
-  const handleViewSolution = async (solutionId: string, driveFileId: string) => {
-    if (!userData) return;
+  // 🚀 更新：直接接收 file_url 並放進預覽器
+  const handleViewSolution = async (solutionId: string, fileUrl: string) => {
+    if (!userData || !fileUrl) {
+      alert("此解答檔案有誤，請聯絡老師重新上傳。");
+      return;
+    }
     try {
       const batch = writeBatch(db);
       batch.update(doc(db, "solutions", solutionId), { view_count: increment(1) });
@@ -65,7 +67,9 @@ export default function DashboardPage() {
         student_uid: auth.currentUser?.uid, seat_number: userData.seat_number, solution_id: solutionId, viewed_at: serverTimestamp()
       });
       await batch.commit();
-      setViewingPreviewUrl(`https://drive.google.com/file/d/${driveFileId}/preview`);
+      
+      // 使用 Firebase 的直接下載網址當作 iframe 的來源
+      setViewingPreviewUrl(fileUrl);
     } catch (e) { console.error(e); }
   };
 
@@ -107,7 +111,6 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex items-center gap-2 md:gap-4">
-              {/* 🚀 主題切換按鈕 (使用 resolvedTheme 判斷) */}
               {mounted && (
                 <motion.button 
                   whileTap={{ scale: 0.9 }} 
@@ -140,7 +143,8 @@ export default function DashboardPage() {
 
           <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
             {sortedSolutions.map(sol => (
-              <motion.div key={sol.id} variants={itemVariants} whileHover={{ y: -5, scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleViewSolution(sol.id, sol.drive_file_id)} 
+              {/* 🚀 點擊時改傳 file_url */}
+              <motion.div key={sol.id} variants={itemVariants} whileHover={{ y: -5, scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleViewSolution(sol.id, sol.file_url)} 
                 className="group bg-white/60 dark:bg-slate-900/50 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border border-white dark:border-slate-700/50 shadow-lg hover:shadow-2xl hover:bg-white/90 dark:hover:bg-slate-800/80 transition-all cursor-pointer relative overflow-hidden"
               >
                 <div className="absolute top-0 left-0 w-2 h-full bg-teal-400 dark:bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" />
