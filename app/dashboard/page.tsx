@@ -54,7 +54,6 @@ export default function DashboardPage() {
     } catch (e) { console.error(e); }
   };
 
-  // 🚀 更新：直接接收 file_url 並放進預覽器
   const handleViewSolution = async (solutionId: string, fileUrl: string) => {
     if (!userData || !fileUrl) {
       alert("此解答檔案有誤，請聯絡老師重新上傳。");
@@ -68,7 +67,6 @@ export default function DashboardPage() {
       });
       await batch.commit();
       
-      // 使用 Firebase 的直接下載網址當作 iframe 的來源
       setViewingPreviewUrl(fileUrl);
     } catch (e) { console.error(e); }
   };
@@ -143,7 +141,6 @@ export default function DashboardPage() {
 
           <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
             {sortedSolutions.map(sol => (
-              {/* 🚀 點擊時改傳 file_url */}
               <motion.div key={sol.id} variants={itemVariants} whileHover={{ y: -5, scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleViewSolution(sol.id, sol.file_url)} 
                 className="group bg-white/60 dark:bg-slate-900/50 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border border-white dark:border-slate-700/50 shadow-lg hover:shadow-2xl hover:bg-white/90 dark:hover:bg-slate-800/80 transition-all cursor-pointer relative overflow-hidden"
               >
