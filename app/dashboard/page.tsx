@@ -10,7 +10,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun } from "lucide-react";
+import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun, ExternalLink } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -67,7 +67,9 @@ export default function DashboardPage() {
       });
       await batch.commit();
       
-      setViewingPreviewUrl(fileUrl);
+      // 🚀 核心修復：把 Google Drive 的 /view 網址強制轉成 /preview 才能嵌入 iframe
+      const previewUrl = fileUrl.replace(/\/view.*/, "/preview");
+      setViewingPreviewUrl(previewUrl);
     } catch (e) { console.error(e); }
   };
 
@@ -173,10 +175,23 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-teal-50 dark:bg-teal-500/10 rounded-xl"><BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400" /></div>
                   <span className="font-black text-base md:text-lg text-slate-800 dark:text-slate-100">正在查閱解答</span>
+                  
+                  {/* 🚀 防呆救援按鈕：如果學生的手機阻擋 iframe，讓他們可以直接跳轉出去看 */}
+                  <a href={viewingPreviewUrl} target="_blank" rel="noopener noreferrer" className="ml-2 hidden sm:flex items-center gap-1 text-[10px] bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 px-3 py-1.5 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors">
+                    <ExternalLink className="w-3 h-3" /> 新分頁開啟
+                  </a>
                 </div>
-                <motion.button whileHover={{ rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 dark:hover:bg-red-500 hover:text-white dark:text-slate-300 rounded-full font-bold transition-all">✕</motion.button>
+                
+                <div className="flex items-center gap-3">
+                  {/* 手機版的救援按鈕 */}
+                  <a href={viewingPreviewUrl} target="_blank" rel="noopener noreferrer" className="sm:hidden w-10 h-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded-full">
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                  <motion.button whileHover={{ rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 dark:hover:bg-red-500 hover:text-white dark:text-slate-300 rounded-full font-bold transition-all">✕</motion.button>
+                </div>
               </div>
               <div className="flex-1 w-full bg-slate-200 dark:bg-slate-800 transition-colors">
+                {/* 如果在手機上遇到灰色畫面，學生可以點擊上方的「新分頁開啟」來繞過限制 */}
                 <iframe src={viewingPreviewUrl} className="w-full h-full border-none" allow="autoplay" title="PDF Preview" />
               </div>
             </motion.div>
