@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db, storage } from "@/lib/firebase"; // 🚀 引入 storage
+import { auth, db } from "@/lib/firebase"; // 🚀 已經不需要 storage 了
 import { 
   collection, getDocs, doc, getDoc, query, orderBy, 
   addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, 
   writeBatch, increment 
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage"; // 🚀 引入上傳工具
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -66,6 +65,7 @@ export default function AdminPage() {
     } catch (e) { console.error(e); }
   };
 
+  // 🚀 強制校正按鈕邏輯
   const handleDataRepair = async () => {
     if (!confirm("確定執行「強制校正」？這將重新統計資料庫內所有紀錄。")) return;
     setLoading(true);
@@ -93,7 +93,7 @@ export default function AdminPage() {
     } catch (e) { alert("校正失敗"); } finally { setLoading(false); }
   };
 
-  // 🚀 Firebase Storage 專屬的超快上傳邏輯
+  // 🚀 GAS 跨帳號專屬的極速上傳邏輯
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsUploading(true);
@@ -102,33 +102,55 @@ export default function AdminPage() {
     const subject = formData.get('subject') as string;
     const title = formData.get('title') as string;
 
-    try {
-      // 1. 建立一個獨一無二的檔案路徑 (避免檔名重複被覆蓋)
-      const fileRef = ref(storage, `solutions/${Date.now()}_${file.name}`);
-      
-      // 2. 上傳檔案到 Firebase Storage
-      await uploadBytes(fileRef, file);
-      
-      // 3. 取得公開下載網址
-      const downloadURL = await getDownloadURL(fileRef);
+    // ⚠️⚠️⚠️ 這裡請務必貼上你剛剛部署 GAS 獲得的「網頁應用程式網址」 ⚠️⚠️⚠️
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbygibovMu_M60vb67idUpFTibjBGSQknsm6XOyx-_wY7WXZGfDMeKuopLjfdysVEAuS/exec";
 
-      // 4. 把網址存進 Firestore 資料庫
-      await addDoc(collection(db, "solutions"), {
-        subject, 
-        title, 
-        file_url: downloadURL, // 💡 不再用 drive_file_id，改用 file_url
-        view_count: 0, 
-        created_at: serverTimestamp()
-      });
-      
-      await fetchAdminData();
-      (e.target as HTMLFormElement).reset();
-      alert("✅ 閃電上傳成功！");
+    if (GAS_WEB_APP_URL.includes("你的那一長串")) {
+      alert("⚠️ 兄弟，你忘記把 GAS 的網址貼到代碼裡了！請打開 admin/page.tsx 替換 GAS_WEB_APP_URL");
+      setIsUploading(false);
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        try {
+          const res = await fetch(GAS_WEB_APP_URL, {
+            method: "POST",
+            body: JSON.stringify({
+              fileName: file.name,
+              base64: reader.result
+            }),
+          });
+
+          const data = await res.json();
+          
+          if (data.status === 'success') {
+            await addDoc(collection(db, "solutions"), {
+              subject, 
+              title, 
+              file_url: data.url, 
+              view_count: 0, 
+              created_at: serverTimestamp()
+            });
+            
+            await fetchAdminData();
+            (e.target as HTMLFormElement).reset();
+            alert("✅ GAS 跨界上傳成功！檔案已存入你的個人雲端硬碟！");
+          } else {
+            throw new Error(data.message);
+          }
+        } catch (error: any) {
+          console.error("GAS 上傳錯誤：", error);
+          alert(`❌ 上傳失敗：\n\n${error.message}`);
+        } finally {
+          setIsUploading(false);
+        }
+      };
       
     } catch (error: any) {
-      console.error("詳細上傳錯誤：", error);
-      alert(`❌ 上傳失敗：\n\n${error.message}`);
-    } finally {
+      alert(`❌ 發生未預期的錯誤：\n\n${error.message}`);
       setIsUploading(false);
     }
   };
@@ -142,6 +164,7 @@ export default function AdminPage() {
     } catch (e) { alert("修改姓名失敗"); }
   };
 
+  // 🚀 手動綁定按鈕邏輯
   const handleManualBind = async (seatId: string) => {
     const uid = prompt(`輸入 ${seatId} 號學生的 Google UID：\n(可在 Firebase Authentication 後台查詢)`);
     if (!uid) return;
