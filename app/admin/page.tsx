@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db } from "@/lib/firebase"; // 🚀 已經不需要 storage 了
+import { auth, db } from "@/lib/firebase"; 
 import { 
   collection, getDocs, doc, getDoc, query, orderBy, 
   addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, 
@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, Upload, Users, BarChart3, Book, AlertTriangle, Edit2, Eye, Link, Unlink, Sun, Moon } from "lucide-react";
+import { RefreshCw, Upload, Users, BarChart3, Book, AlertTriangle, Edit2, Eye, Link, Unlink, Sun, Moon, BookOpen } from "lucide-react"; // 🚀 補上 BookOpen
 import { useTheme } from "next-themes";
 
 const COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#60a5fa'];
@@ -30,6 +30,7 @@ export default function AdminPage() {
   const [newSubject, setNewSubject] = useState(""); 
   const [isVerified, setIsVerified] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [viewingPreviewUrl, setViewingPreviewUrl] = useState<string | null>(null); // 🚀 新增預覽狀態
   const [loading, setLoading] = useState(true);
   const [sortMethod, setSortMethod] = useState("time");
   const [isUploading, setIsUploading] = useState(false);
@@ -65,7 +66,6 @@ export default function AdminPage() {
     } catch (e) { console.error(e); }
   };
 
-  // 🚀 強制校正按鈕邏輯
   const handleDataRepair = async () => {
     if (!confirm("確定執行「強制校正」？這將重新統計資料庫內所有紀錄。")) return;
     setLoading(true);
@@ -93,7 +93,6 @@ export default function AdminPage() {
     } catch (e) { alert("校正失敗"); } finally { setLoading(false); }
   };
 
-  // 🚀 GAS 跨帳號專屬的極速上傳邏輯
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsUploading(true);
@@ -102,14 +101,7 @@ export default function AdminPage() {
     const subject = formData.get('subject') as string;
     const title = formData.get('title') as string;
 
-    // ⚠️⚠️⚠️ 這裡請務必貼上你剛剛部署 GAS 獲得的「網頁應用程式網址」 ⚠️⚠️⚠️
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbygibovMu_M60vb67idUpFTibjBGSQknsm6XOyx-_wY7WXZGfDMeKuopLjfdysVEAuS/exec";
-
-    if (GAS_WEB_APP_URL.includes("你的那一長串")) {
-      alert("⚠️ 兄弟，你忘記把 GAS 的網址貼到代碼裡了！請打開 admin/page.tsx 替換 GAS_WEB_APP_URL");
-      setIsUploading(false);
-      return;
-    }
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyw7tFvPZ60tU917X1lHCHlJ3Lw6f7w6z42171h0aO2fB1v0M6yL1D9J0N9y8Z8e8M2/exec";
 
     try {
       const reader = new FileReader();
@@ -164,7 +156,6 @@ export default function AdminPage() {
     } catch (e) { alert("修改姓名失敗"); }
   };
 
-  // 🚀 手動綁定按鈕邏輯
   const handleManualBind = async (seatId: string) => {
     const uid = prompt(`輸入 ${seatId} 號學生的 Google UID：\n(可在 Firebase Authentication 後台查詢)`);
     if (!uid) return;
@@ -200,6 +191,17 @@ export default function AdminPage() {
     } catch (e) { 
       console.error(e);
       alert("刪除紀錄失敗！"); 
+    }
+  };
+
+  // 🚀 老師無痕預覽邏輯 (完全不觸發 Firebase 寫入)
+  const handleTeacherPreview = (sol: any) => {
+    if (sol.file_url) {
+      setViewingPreviewUrl(sol.file_url.replace(/\/view.*/, "/preview"));
+    } else if (sol.drive_file_id) {
+      setViewingPreviewUrl(`https://drive.google.com/file/d/${sol.drive_file_id}/preview`);
+    } else {
+      alert("此解答無效");
     }
   };
 
@@ -324,7 +326,11 @@ export default function AdminPage() {
                               <span className="text-indigo-500 dark:text-indigo-400 mr-3 text-[10px] bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-full uppercase">[{sol.subject}]</span>
                               {sol.title}
                             </span>
-                            <button onClick={() => deleteDoc(doc(db,"solutions",sol.id)).then(fetchAdminData)} className="bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white dark:hover:bg-red-500 dark:hover:text-white">刪除</button>
+                            {/* 🚀 加入無痕預覽按鈕 */}
+                            <div className="flex gap-2">
+                              <button onClick={() => handleTeacherPreview(sol)} className="bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-teal-500 hover:text-white dark:hover:bg-teal-500 dark:hover:text-white">預覽</button>
+                              <button onClick={() => deleteDoc(doc(db,"solutions",sol.id)).then(fetchAdminData)} className="bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white dark:hover:bg-red-500 dark:hover:text-white">刪除</button>
+                            </div>
                           </motion.div>
                         ))}
                       </motion.div>
@@ -452,6 +458,29 @@ export default function AdminPage() {
                 {viewLogs.filter(l => l.seat_number === selectedStudent.seat_number).length === 0 && (
                   <div className="text-center py-20 text-gray-400 dark:text-slate-500 font-medium italic">目前尚無紀錄</div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 🚀 新增：老師專用解答預覽 Modal (無痕) */}
+      <AnimatePresence>
+        {viewingPreviewUrl && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-6 overflow-hidden">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setViewingPreviewUrl(null)} className="absolute inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-lg" />
+            <motion.div initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} 
+              className="bg-white dark:bg-slate-900 rounded-t-[3rem] md:rounded-[3.5rem] w-full max-w-5xl h-[95vh] md:h-[85vh] flex flex-col overflow-hidden shadow-2xl relative z-10 border border-transparent dark:border-slate-700/50"
+            >
+              <div className="p-5 md:p-8 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl"><BookOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /></div>
+                  <span className="font-black text-base md:text-lg text-slate-800 dark:text-slate-100">正在查閱解答 (無痕預覽)</span>
+                </div>
+                <motion.button whileHover={{ rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 dark:hover:bg-red-500 hover:text-white dark:text-slate-300 rounded-full font-bold transition-all">✕</motion.button>
+              </div>
+              <div className="flex-1 w-full bg-slate-200 dark:bg-slate-800 transition-colors">
+                <iframe src={viewingPreviewUrl} className="w-full h-full border-none" allow="autoplay" title="PDF Preview" />
               </div>
             </motion.div>
           </div>
