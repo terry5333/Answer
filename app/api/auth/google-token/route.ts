@@ -1,24 +1,23 @@
 import { NextResponse } from 'next/server';
+import { GoogleAuth } from 'google-auth-library';
 
 export async function GET() {
   try {
-    const params = new URLSearchParams();
-    params.append('client_id', process.env.GOOGLE_CLIENT_ID!);
-    params.append('client_secret', process.env.GOOGLE_CLIENT_SECRET!);
-    params.append('refresh_token', process.env.GOOGLE_REFRESH_TOKEN!);
-    params.append('grant_type', 'refresh_token');
-
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      body: params,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    const auth = new GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        // 確保 Vercel 環境變數裡的換行符號能被正確解析
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'), 
+      },
+      scopes: ['https://www.googleapis.com/auth/drive.file'], // 只允許存取我們自己上傳的檔案
     });
 
-    const data = await res.json();
-    if (!res.ok) return NextResponse.json({ error: data.error_description }, { status: res.status });
+    const client = await auth.getClient();
+    const token = await client.getAccessToken();
 
-    return NextResponse.json({ access_token: data.access_token });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ access_token: token.token });
+  } catch (error) {
+    console.error('獲取 Google Token 失敗:', error);
+    return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 });
   }
 }
