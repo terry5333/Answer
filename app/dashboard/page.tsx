@@ -10,7 +10,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun, ExternalLink } from "lucide-react";
+import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun } from "lucide-react"; // 🚀 移除了 ExternalLink
 import { useTheme } from "next-themes";
 
 const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -54,22 +54,29 @@ export default function DashboardPage() {
     } catch (e) { console.error(e); }
   };
 
-  const handleViewSolution = async (solutionId: string, fileUrl: string) => {
-    if (!userData || !fileUrl) {
-      alert("此解答檔案有誤，請聯絡老師重新上傳。");
+  // 🚀 修復：同時支援新版 GAS 網址與舊版 Google Drive ID
+  const handleViewSolution = async (sol: any) => {
+    if (!userData) return;
+
+    let targetUrl = "";
+    if (sol.file_url) {
+      targetUrl = sol.file_url.replace(/\/view.*/, "/preview"); // 新版
+    } else if (sol.drive_file_id) {
+      targetUrl = `https://drive.google.com/file/d/${sol.drive_file_id}/preview`; // 舊版
+    } else {
+      alert("此解答檔案連結遺失，請聯絡老師。");
       return;
     }
+
     try {
       const batch = writeBatch(db);
-      batch.update(doc(db, "solutions", solutionId), { view_count: increment(1) });
+      batch.update(doc(db, "solutions", sol.id), { view_count: increment(1) });
       batch.set(doc(collection(db, "view_logs")), {
-        student_uid: auth.currentUser?.uid, seat_number: userData.seat_number, solution_id: solutionId, viewed_at: serverTimestamp()
+        student_uid: auth.currentUser?.uid, seat_number: userData.seat_number, solution_id: sol.id, viewed_at: serverTimestamp()
       });
       await batch.commit();
       
-      // 🚀 核心修復：把 Google Drive 的 /view 網址強制轉成 /preview 才能嵌入 iframe
-      const previewUrl = fileUrl.replace(/\/view.*/, "/preview");
-      setViewingPreviewUrl(previewUrl);
+      setViewingPreviewUrl(targetUrl);
     } catch (e) { console.error(e); }
   };
 
@@ -143,7 +150,8 @@ export default function DashboardPage() {
 
           <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
             {sortedSolutions.map(sol => (
-              <motion.div key={sol.id} variants={itemVariants} whileHover={{ y: -5, scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleViewSolution(sol.id, sol.file_url)} 
+              {/* 🚀 改為傳入整個 sol 物件進行判斷 */}
+              <motion.div key={sol.id} variants={itemVariants} whileHover={{ y: -5, scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleViewSolution(sol)} 
                 className="group bg-white/60 dark:bg-slate-900/50 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border border-white dark:border-slate-700/50 shadow-lg hover:shadow-2xl hover:bg-white/90 dark:hover:bg-slate-800/80 transition-all cursor-pointer relative overflow-hidden"
               >
                 <div className="absolute top-0 left-0 w-2 h-full bg-teal-400 dark:bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -175,23 +183,11 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-teal-50 dark:bg-teal-500/10 rounded-xl"><BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400" /></div>
                   <span className="font-black text-base md:text-lg text-slate-800 dark:text-slate-100">正在查閱解答</span>
-                  
-                  {/* 🚀 防呆救援按鈕：如果學生的手機阻擋 iframe，讓他們可以直接跳轉出去看 */}
-                  <a href={viewingPreviewUrl} target="_blank" rel="noopener noreferrer" className="ml-2 hidden sm:flex items-center gap-1 text-[10px] bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 px-3 py-1.5 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors">
-                    <ExternalLink className="w-3 h-3" /> 新分頁開啟
-                  </a>
                 </div>
-                
-                <div className="flex items-center gap-3">
-                  {/* 手機版的救援按鈕 */}
-                  <a href={viewingPreviewUrl} target="_blank" rel="noopener noreferrer" className="sm:hidden w-10 h-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded-full">
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                  <motion.button whileHover={{ rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 dark:hover:bg-red-500 hover:text-white dark:text-slate-300 rounded-full font-bold transition-all">✕</motion.button>
-                </div>
+                {/* 🚀 乾淨的關閉按鈕，移除導外連結 */}
+                <motion.button whileHover={{ rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 dark:hover:bg-red-500 hover:text-white dark:text-slate-300 rounded-full font-bold transition-all">✕</motion.button>
               </div>
               <div className="flex-1 w-full bg-slate-200 dark:bg-slate-800 transition-colors">
-                {/* 如果在手機上遇到灰色畫面，學生可以點擊上方的「新分頁開啟」來繞過限制 */}
                 <iframe src={viewingPreviewUrl} className="w-full h-full border-none" allow="autoplay" title="PDF Preview" />
               </div>
             </motion.div>
