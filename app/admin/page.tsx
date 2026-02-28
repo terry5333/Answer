@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase"; 
 import { collection, getDocs, doc, getDoc, query, orderBy, addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, writeBatch, increment } from "firebase/firestore";
@@ -48,14 +49,16 @@ export default function AdminPage() {
   }, [router]);
 
   const fetchAdminData = async () => {
-    const subSnap = await getDocs(collection(db, "subjects"));
-    const solSnap = await getDocs(query(collection(db, "solutions"), orderBy("created_at", "desc")));
-    const stuSnap = await getDocs(query(collection(db, "students"), orderBy("seat_number", "asc")));
-    const logSnap = await getDocs(query(collection(db, "view_logs"), orderBy("viewed_at", "desc")));
-    setSubjects(subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    setStudents(stuSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    setViewLogs(logSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    try {
+      const subSnap = await getDocs(collection(db, "subjects"));
+      const solSnap = await getDocs(query(collection(db, "solutions"), orderBy("created_at", "desc")));
+      const stuSnap = await getDocs(query(collection(db, "students"), orderBy("seat_number", "asc")));
+      const logSnap = await getDocs(query(collection(db, "view_logs"), orderBy("viewed_at", "desc")));
+      setSubjects(subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setStudents(stuSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setViewLogs(logSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (e) { console.error(e); }
   };
 
   const fetchMaintenanceStatus = async () => {
@@ -63,40 +66,17 @@ export default function AdminPage() {
     if (mSnap.exists()) { setMaintenance(mSnap.data() as any); setSelectedTesters(mSnap.data().testers || []); }
   };
 
-  const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsUploading(true);
-    const formData = new FormData(e.currentTarget);
-    const file = formData.get('file') as File;
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async () => {
-      try {
-        const res = await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: file.name, base64: reader.result }) });
-        const data = await res.json();
-        if (data.status === 'success') {
-          await addDoc(collection(db, "solutions"), { subject: formData.get('subject'), title: formData.get('title'), file_url: data.url, view_count: 0, created_at: serverTimestamp() });
-          fetchAdminData();
-          (e.target as HTMLFormElement).reset();
-          alert("✅ 上傳成功");
-        }
-      } catch (err: any) { alert(err.message); } finally { setIsUploading(false); }
-    };
-  };
-
-  const handleManualBind = async (seatId: string) => {
-    const uid = prompt(`輸入 ${seatId} 號學生的 UID：`);
-    if (!uid) return;
+  const handleFullDelete = async (sol: any) => {
+    if (!confirm(`確定徹底刪除「${sol.title}」？`)) return;
     try {
-      await updateDoc(doc(db, "students", seatId), { bound_uid: uid.trim() });
-      await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(seatId) }, { merge: true });
+      if (sol.file_url) await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "DELETE", fileUrl: sol.file_url }) });
+      await deleteDoc(doc(db, "solutions", sol.id));
       fetchAdminData();
-      alert("✅ 綁定成功");
-    } catch (e) { alert("失敗"); }
+    } catch (error) { alert("刪除失敗"); }
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-white dark:bg-slate-950 flex items-center justify-center">
+    <div className="min-h-screen bg-white dark:bg-slate-950 flex flex-col items-center justify-center transition-colors">
       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }} className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full shadow-[0_0_20px_rgba(79,70,229,0.3)]" />
     </div>
   );
@@ -104,14 +84,17 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950/80 p-4 md:p-8 text-slate-800 dark:text-slate-100 transition-colors duration-500 pb-24">
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
+        
+        {/* Header */}
         <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl">
-          <div className="flex items-center gap-4"><div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg">T</div><h1 className="text-xl font-black italic tracking-tighter">TerryEdu Admin</h1></div>
+          <div className="flex items-center gap-4"><div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black">T</div><h1 className="text-xl font-black italic tracking-tighter">TerryEdu Admin</h1></div>
           <div className="flex items-center gap-3">
             {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-10 h-10 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}</button>}
-            <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-slate-200 dark:bg-slate-800 px-6 py-2.5 rounded-full font-bold text-sm shadow-sm">登出</button>
+            <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-slate-200 dark:bg-slate-800 px-6 py-2.5 rounded-full font-bold text-sm shadow-sm transition-all hover:bg-slate-300">登出</button>
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="flex justify-center gap-2 bg-white/70 dark:bg-slate-900/60 p-2 rounded-full shadow-lg border border-white/50 dark:border-slate-700/50 sticky top-4 z-40 transition-colors">
           {[{id:"solutions",label:"解答",icon:<Book size={16}/>,color:"bg-indigo-600"},{id:"students",label:"學生",icon:<Users size={16}/>,color:"bg-teal-600"},{id:"reports",label:"報表",icon:<BarChart3 size={16}/>,color:"bg-orange-500"}].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2 px-6 py-3 rounded-full font-bold transition-all ${activeTab === t.id ? `text-white ${t.color}` : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"}`}>{t.icon} {t.label}</button>
@@ -123,21 +106,22 @@ export default function AdminPage() {
         ) : (
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}>
+              
               {activeTab === "solutions" && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 h-fit transition-colors">
                     <h2 className="text-lg font-black mb-6 flex items-center gap-2">科目設定</h2>
-                    <div className="flex gap-2 mb-6"><input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white dark:bg-slate-800 outline-none text-sm shadow-inner transition-colors" /><button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); await fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold shadow-lg">+</button></div>
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto">{subjects.map(s => <div key={s.id} className="flex justify-between bg-white/80 dark:bg-slate-800/80 px-6 py-3 rounded-2xl font-bold border border-gray-50 dark:border-slate-700 transition-colors">{s.name}<button onClick={() => deleteDoc(doc(db,"subjects",s.id)).then(fetchAdminData)} className="text-red-300">✕</button></div>)}</div>
+                    <div className="flex gap-2 mb-6"><input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white dark:bg-slate-800 outline-none text-sm shadow-inner transition-colors" /><button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); await fetchAdminData(); }}} className="bg-indigo-600 text-white w-12 h-12 rounded-full font-bold shadow-lg transition-all active:scale-95">+</button></div>
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">{subjects.map(s => <div key={s.id} className="flex justify-between bg-white/80 dark:bg-slate-800/80 px-6 py-3 rounded-2xl font-bold border border-gray-50 dark:border-slate-700 transition-colors">{s.name}<button onClick={() => deleteDoc(doc(db,"subjects",s.id)).then(fetchAdminData)} className="text-red-300 hover:text-red-500 transition-colors">✕</button></div>)}</div>
                   </div>
                   <div className="lg:col-span-2 flex flex-col gap-6">
                     <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
                       <div className="flex justify-between items-center mb-6"><h2 className="text-lg font-black flex items-center gap-2"><Upload size={20}/> 上傳解答</h2><button onClick={async () => { setIsSyncing(true); setShowSyncModal(true); const res = await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "LIST_FILES" }) }); const data = await res.json(); if(data.status === 'success') { const dbIds = solutions.map(s => s.file_url?.match(/[-\w]{25,}/)?.[0]).filter(Boolean); setOrphanedFiles(data.files.filter((f:any) => !dbIds.includes(f.id))); } setIsSyncing(false); }} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-5 py-2 rounded-full text-xs font-black shadow-sm hover:bg-indigo-600 hover:text-white transition-all"><Search size={14}/> 解答比對</button></div>
-                      <form onSubmit={handleUpload} className="flex flex-col sm:flex-row gap-4 items-center"><select name="subject" required className="w-full sm:w-1/3 bg-white dark:bg-slate-800 rounded-full px-5 py-3 font-bold text-sm shadow-inner"><option value="">選擇科目</option>{subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select><input name="title" required placeholder="標題" className="flex-1 w-full bg-white dark:bg-slate-800 rounded-full px-6 py-3 font-bold text-sm shadow-inner" /><div className="flex items-center gap-2 w-full sm:w-auto"><input type="file" name="file" required className="text-[10px] flex-1"/><button disabled={isUploading} className="bg-indigo-600 text-white font-black py-3 px-8 rounded-full shadow-lg disabled:opacity-50 text-sm">{isUploading ? "..." : "發佈"}</button></div></form>
+                      <form onSubmit={handleUpload} className="flex flex-col sm:flex-row gap-4 items-center"><select name="subject" required className="w-full sm:w-1/3 bg-white dark:bg-slate-800 rounded-full px-5 py-3 font-bold text-sm shadow-inner transition-colors cursor-pointer"><option value="">選擇科目</option>{subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select><input name="title" required placeholder="標題" className="flex-1 w-full bg-white dark:bg-slate-800 rounded-full px-6 py-3 font-bold text-sm shadow-inner transition-colors" /><div className="flex items-center gap-2 w-full sm:w-auto"><input type="file" name="file" required className="text-[10px] flex-1 dark:text-slate-300"/><button disabled={isUploading} className="bg-indigo-600 text-white font-black py-3 px-8 rounded-full shadow-lg disabled:opacity-50 text-sm transition-all active:scale-95">{isUploading ? "..." : "發佈"}</button></div></form>
                     </div>
                     <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
-                      <div className="flex justify-between items-center mb-6"><h2 className="text-lg font-black">📚 解答資料庫</h2><select value={sortMethod} onChange={e => setSortMethod(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2 rounded-full font-bold text-[10px] border dark:border-slate-700 shadow-sm cursor-pointer"><option value="time">最新上傳</option><option value="subject">科目排序</option></select></div>
-                      <div className="space-y-3">{solutions.map(sol => <div key={sol.id} className="flex justify-between items-center bg-white/80 dark:bg-slate-800/80 px-8 py-5 rounded-[2.5rem] shadow-sm border border-white dark:border-slate-700/50 group hover:bg-white/95 transition-all"><span className="font-bold text-sm"><span className="text-indigo-500 mr-3 text-[10px] bg-indigo-50 px-2 py-1 rounded-full uppercase tracking-wider">[{sol.subject}]</span>{sol.title}</span><div className="flex gap-2"><button onClick={() => setViewingPreviewUrl(sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : `https://drive.google.com/file/d/${sol.drive_file_id}/preview`)} className="bg-teal-50 dark:bg-teal-500/10 text-teal-600 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 hover:bg-teal-500 hover:text-white transition-all">預覽</button><button onClick={async () => { if(confirm("確定刪除？")) { if(sol.file_url) await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "DELETE", fileUrl: sol.file_url }) }); await deleteDoc(doc(db,"solutions",sol.id)); fetchAdminData(); } }} className="bg-red-50 text-red-500 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:text-white transition-all">刪除</button></div></div>)}</div>
+                      <div className="flex justify-between items-center mb-6"><h2 className="text-lg font-black">📚 解答資料庫</h2><select value={sortMethod} onChange={e => setSortMethod(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2 rounded-full font-bold text-[10px] border dark:border-slate-700 shadow-sm transition-colors cursor-pointer"><option value="time">最新上傳</option><option value="subject">科目排序</option></select></div>
+                      <div className="space-y-3">{solutions.map(sol => <div key={sol.id} className="flex justify-between items-center bg-white/80 dark:bg-slate-800/80 px-8 py-5 rounded-[2.5rem] shadow-sm border border-white dark:border-slate-700/50 group hover:bg-white/95 transition-all"><span className="font-bold text-sm"><span className="text-indigo-500 mr-3 text-[10px] bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-full uppercase tracking-wider">[{sol.subject}]</span>{sol.title}</span><div className="flex gap-2"><button onClick={() => setViewingPreviewUrl(sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : `https://drive.google.com/file/d/${sol.drive_file_id}/preview`)} className="bg-teal-50 dark:bg-teal-500/10 text-teal-600 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 hover:bg-teal-500 hover:text-white transition-all">預覽</button><button onClick={() => handleFullDelete(sol)} className="bg-red-50 text-red-500 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white transition-all">刪除</button></div></div>)}</div>
                     </div>
                   </div>
                 </div>
@@ -146,16 +130,31 @@ export default function AdminPage() {
               {activeTab === "students" && (
                 <div className="flex flex-col gap-8">
                   <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-4 transition-colors">
-                    <div className="flex items-center gap-4"><div className={`p-3 rounded-2xl ${maintenance.active ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}><ShieldCheck size={24} /></div><div><h3 className="font-black text-sm italic">維護模式</h3><p className="text-[10px] text-slate-500">{maintenance.active ? `維護中 (已允許 ${maintenance.testers.length} 名測試員)` : '正常運作中'}</p></div></div>
-                    <button onClick={() => { if(maintenance.active) setDoc(doc(db,"settings","maintenance"),{active:false,testers:[]}).then(() => fetchMaintenanceStatus()); else setShowTesterModal(true); }} className={`px-8 py-3 rounded-full font-black text-xs shadow-lg transition-all ${maintenance.active ? 'bg-slate-200 text-slate-600' : 'bg-orange-500 text-white'}`}>{maintenance.active ? '關閉維護' : '啟動維護'}</button>
+                    <div className="flex items-center gap-4"><div className={`p-3 rounded-2xl ${maintenance.active ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}><ShieldCheck size={24} /></div><div><h3 className="font-black text-sm italic">維護系統狀態</h3><p className="text-[10px] text-slate-500">{maintenance.active ? `維護中 (已允許 ${maintenance.testers.length} 名測試員)` : '正常運作中'}</p></div></div>
+                    <button onClick={() => { if(maintenance.active) setDoc(doc(db,"settings","maintenance"),{active:false,testers:[]}).then(() => fetchMaintenanceStatus()); else setShowTesterModal(true); }} className={`px-8 py-3 rounded-full font-black text-xs shadow-lg transition-all ${maintenance.active ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-orange-500 text-white hover:bg-orange-600'}`}>{maintenance.active ? '關閉維護' : '啟動維護'}</button>
                   </div>
-                  <div className="bg-white/70 dark:bg-slate-900/50 p-12 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">{students.map(s => <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center shadow-lg border-2 relative transition-all ${maintenance.active && maintenance.testers.includes(s.seat_number) ? 'border-orange-400' : 'border-transparent'}`}><div className="relative mb-6"><div className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-700 shadow-xl overflow-hidden"><img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-full h-full object-cover" /></div><div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[12px] font-black w-8 h-8 flex items-center justify-center rounded-full border-4 border-white dark:border-slate-700 shadow-md">{s.seat_number}</div></div><div className="font-black text-xl mb-6 dark:text-white">{s.name}</div><div className="flex flex-col w-full gap-3 border-t dark:border-slate-700 pt-6 mt-auto"><button onClick={() => setSelectedStudent(s)} className="flex items-center justify-center gap-2 bg-indigo-50 text-indigo-600 text-xs font-black py-3.5 rounded-full hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Eye size={16}/> 觀看紀錄</button>{s.bound_uid ? <button onClick={() => { if(confirm("解除？")) writeBatch(db).update(doc(db,"students",s.id),{bound_uid:null,bound_email:null,photo_url:null}).delete(doc(db,"users",s.bound_uid)).commit().then(fetchAdminData); }} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-xs font-black py-3.5 rounded-full hover:bg-red-500 hover:text-white shadow-sm transition-all">解除連動</button> : <button onClick={() => handleManualBind(s.id)} className="bg-teal-50 text-teal-600 text-xs font-black py-3.5 rounded-full hover:bg-teal-500 hover:text-white border border-teal-100 transition-all">手動綁定</button>}</div></div>)}</div></div>
+                  <div className="bg-white/70 dark:bg-slate-900/50 p-12 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">{students.map(s => (
+                      <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center shadow-lg border-2 relative transition-all ${maintenance.active && maintenance.testers.includes(Number(s.seat_number)) ? 'border-orange-400' : 'border-transparent'}`}>
+                        <div className="relative mb-6">
+                          <div className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-700 shadow-xl overflow-hidden"><img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" /></div>
+                          {/* 🚀 修正 Badge 位置 */}
+                          <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[12px] font-black w-8 h-8 flex items-center justify-center rounded-full border-4 border-white dark:border-slate-700 shadow-md">{s.seat_number}</div>
+                        </div>
+                        <div className="font-black text-xl mb-6 dark:text-white">{s.name}</div>
+                        <div className="flex flex-col w-full gap-3 border-t dark:border-slate-700 pt-6 mt-auto">
+                          <button onClick={() => setSelectedStudent(s)} className="flex items-center justify-center gap-2 bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-xs font-black py-3.5 rounded-full hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Eye size={16}/> 觀看紀錄</button>
+                          {s.bound_uid ? <button onClick={() => { if(confirm("確定解除連動？")) writeBatch(db).update(doc(db,"students",s.id),{bound_uid:null,bound_email:null,photo_url:null}).delete(doc(db,"users",s.bound_uid)).commit().then(fetchAdminData); }} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-xs font-black py-3.5 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm">解除連動</button> : <button onClick={() => { const u = prompt(`座號 ${s.seat_number} 的 UID：`); if(u) setDoc(doc(db,"users",u.trim()),{role:"student",seat_number:Number(s.seat_number)},{merge:true}).then(() => updateDoc(doc(db,"students",s.id),{bound_uid:u.trim()})).then(fetchAdminData); }} className="bg-teal-50 dark:bg-teal-500/10 text-teal-600 text-xs font-black py-3.5 rounded-full hover:bg-teal-500 hover:text-white border border-teal-100 transition-all">手動綁定</button>}
+                        </div>
+                      </div>
+                    ))}</div>
+                  </div>
                 </div>
               )}
 
               {activeTab === "reports" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 h-[450px] flex flex-col items-center transition-colors"><div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 熱度分析</h2><div className="flex gap-2"><button onClick={fetchAdminData} className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm"><RefreshCw size={12}/> 刷新</button></div></div><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={subjects.map(sub => ({ name: sub.name, value: solutions.filter(s => s.subject === sub.name).reduce((sum, s) => sum + (s.view_count || 0), 0) })).filter(d => d.value > 0)} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>{COLORS.map((c, i) => <Cell key={i} fill={c} />)}</Pie><Tooltip contentStyle={{ borderRadius: '2rem', border: 'none' }} /><Legend iconType="circle" /></PieChart></ResponsiveContainer></div>
+                  <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 h-[450px] flex flex-col items-center transition-colors"><div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 熱度分析</h2><button onClick={fetchAdminData} className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm active:scale-95"><RefreshCw size={12}/> 刷新</button></div><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={subjects.map(sub => ({ name: sub.name, value: solutions.filter(s => s.subject === sub.name).reduce((sum, s) => sum + (s.view_count || 0), 0) })).filter(d => d.value > 0)} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>{COLORS.map((c, i) => <Cell key={i} fill={c} />)}</Pie><Tooltip contentStyle={{ borderRadius: '2rem', border: 'none', backgroundColor: resolvedTheme === 'dark' ? '#1e293b' : '#ffffff' }} /><Legend iconType="circle" /></PieChart></ResponsiveContainer></div>
                   <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 overflow-y-auto max-h-[450px] custom-scrollbar"><h2 className="text-lg font-black mb-8 flex items-center gap-3 dark:text-slate-100"><Trophy size={22} className="text-yellow-500" /> 熱門排行榜</h2>{[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,8).map((sol, i) => (<div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 dark:bg-slate-800/60 rounded-[2rem] mb-4 shadow-sm border border-white/50 group hover:bg-white transition-colors"><span className="font-black text-gray-700 dark:text-slate-200 text-sm flex items-center"><span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : 'bg-indigo-300'}`}>{i+1}</span>{sol.title}</span><span className="text-indigo-600 font-black bg-indigo-50 dark:bg-indigo-500/10 px-4 py-1 rounded-full text-xs">{sol.view_count || 0}</span></div>))}</div>
                 </div>
               )}
@@ -164,24 +163,30 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* 比對 Modal */}
+      {/* 🚀 修復紀錄查看視窗 */}
       <AnimatePresence>
-        {showSyncModal && (
-          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowSyncModal(false)} /><motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border border-white/20 transition-colors"><div className="flex justify-between items-center mb-6 border-b pb-4 dark:border-slate-800"><div className="flex items-center gap-3 text-indigo-600"><Search size={24} /><h3 className="text-xl font-black italic tracking-tight">雲端孤兒檔案清理</h3></div><button onClick={() => setShowSyncModal(false)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500">✕</button></div>{isSyncing ? <div className="py-20 text-center flex flex-col items-center gap-4"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full" /><p className="text-slate-500 font-bold animate-pulse">掃描雲端檔案庫...</p></div> : <div className="space-y-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2">{orphanedFiles.length === 0 ? <div className="py-20 text-center flex flex-col items-center gap-4 text-green-500"><CheckCircle size={48} /><p className="font-black text-sm px-10 italic">雲端資料非常乾淨！</p></div> : <>{orphanedFiles.map(file => <div key={file.id} className="flex justify-between items-center p-5 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border border-white/50 group transition-all"><div className="flex flex-col gap-1 overflow-hidden"><span className="font-black text-sm truncate">{file.name}</span><span className="text-[9px] text-slate-400 font-mono truncate">{file.id}</span></div><button onClick={async () => { if(confirm("刪除？")) { await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "DELETE", fileUrl: file.url }) }); setOrphanedFiles(prev => prev.filter(f => f.id !== file.id)); } }} className="bg-red-50 text-red-500 p-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white shadow-sm transition-all"><Trash2 size={16}/></button></div>)}</>}</div >}</motion.div></div>
-        )}
-      </AnimatePresence>
-
-      {/* Tester Selection Modal */}
-      <AnimatePresence>
-        {showTesterModal && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowTesterModal(false)} /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border border-white/20"><h3 className="text-xl font-black mb-4 flex items-center gap-2 text-orange-500 tracking-tight italic">< ShieldCheck /> 設定維護測試人員</h3><div className="grid grid-cols-4 sm:grid-cols-6 gap-3 mb-8 max-h-[300px] overflow-y-auto custom-scrollbar p-2">{students.map(s => <button key={s.seat_number} onClick={() => setSelectedTesters(prev => prev.includes(s.seat_number) ? prev.filter(n => n !== s.seat_number) : [...prev, s.seat_number])} className={`h-12 rounded-2xl font-black text-sm border-2 transition-all ${selectedTesters.includes(s.seat_number) ? 'bg-orange-500 text-white border-orange-500 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-transparent hover:border-slate-300'}`}>{s.seat_number}</button>)}</div><div className="flex gap-4"><button onClick={() => setShowTesterModal(false)} className="flex-1 py-4 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600">取消</button><button onClick={() => setDoc(doc(db,"settings","maintenance"),{active:true,testers:selectedTesters}).then(() => { fetchMaintenanceStatus(); setShowTesterModal(false); alert("✅ 已啟動"); })} className="flex-1 py-4 rounded-full font-bold bg-orange-500 text-white shadow-xl">啟動維護</button></div></motion.div></div>
-        )}
-      </AnimatePresence>
-
-      {/* Preview Modal */}
-      <AnimatePresence>
-        {viewingPreviewUrl && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-0 md:p-6 overflow-hidden"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-lg" onClick={() => setViewingPreviewUrl(null)} /><motion.div initial={{ y: "100%" }} animate={{ y: 0 }} className="bg-white dark:bg-slate-900 rounded-t-[3rem] md:rounded-[4rem] w-full max-w-5xl h-[95vh] flex flex-col relative z-10 overflow-hidden shadow-2xl"><div className="p-8 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0"><div className="flex items-center gap-3"><div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl"><BookOpen size={20} className="text-indigo-600" /></div><span className="font-black text-lg italic">解答預覽 (管理員模式)</span></div><button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 hover:text-white rounded-full font-bold">✕</button></div><iframe src={viewingPreviewUrl} className="flex-1 w-full border-none" /></motion.div></div>
+        {selectedStudent && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/80 backdrop-blur-md" onClick={() => setSelectedStudent(null)} />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[3.5rem] p-8 md:p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative z-10 border border-white/20 transition-colors">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b dark:border-slate-800"><div className="flex items-center gap-4"><img src={selectedStudent.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white shadow-md" /><h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3></div><button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500 hover:bg-slate-200 transition-colors">✕</button></div>
+              <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
+                {/* 🚀 核心修正：統一將座號轉為數字進行過濾 */}
+                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).map(log => {
+                  const s = solutions.find(sol => sol.id === log.solution_id);
+                  return (
+                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border border-white/50 dark:border-slate-700/50 shadow-sm hover:bg-white dark:hover:bg-slate-800 transition-all">
+                      <div className="flex flex-col"><span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除解答"}</span><span className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span></div>
+                      <button onClick={() => { if(confirm("刪除紀錄？")) writeBatch(db).delete(doc(db,"view_logs",log.id)).update(doc(db,"solutions",log.solution_id),{view_count:increment(-1)}).commit().then(fetchAdminData); }} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white shadow-sm">刪除</button>
+                    </div>
+                  );
+                })}
+                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).length === 0 && (
+                  <div className="py-20 text-center text-slate-400 italic">目前尚無觀看紀錄</div>
+                )}
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
