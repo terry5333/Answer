@@ -26,7 +26,7 @@ export default function AdminPage() {
   const [students, setStudents] = useState<any[]>([]);
   const [viewLogs, setViewLogs] = useState<any[]>([]);
   
-  // 🚀 維護模式相關狀態
+  // 維護模式狀態
   const [maintenance, setMaintenance] = useState({ active: false, testers: [] as number[] });
   const [showTesterModal, setShowTesterModal] = useState(false);
   const [selectedTesters, setSelectedTesters] = useState<number[]>([]);
@@ -78,7 +78,7 @@ export default function AdminPage() {
     }
   };
 
-  // 🚀 保存維護設定
+  // 保存維護設定
   const toggleMaintenance = async (active: boolean) => {
     if (active) {
       setShowTesterModal(true);
@@ -94,7 +94,7 @@ export default function AdminPage() {
     await setDoc(doc(db, "settings", "maintenance"), { active: true, testers: selectedTesters });
     setMaintenance({ active: true, testers: selectedTesters });
     setShowTesterModal(false);
-    alert("✅ 維護模式已啟動，僅限選中人員訪問。");
+    alert("✅ 維護模式已啟動。");
   };
 
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -129,6 +129,18 @@ export default function AdminPage() {
     } catch (err: any) { alert(err.message); setIsUploading(false); }
   };
 
+  // 🚀 修復：補齊手動綁定函數
+  const handleManualBind = async (seatId: string) => {
+    const uid = prompt(`輸入 ${seatId} 號學生的 Google UID：\n(可在 Firebase Authentication 後台查詢)`);
+    if (!uid) return;
+    try {
+      await updateDoc(doc(db, "students", seatId), { bound_uid: uid.trim() });
+      await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(seatId) }, { merge: true });
+      await fetchAdminData();
+      alert("✅ 手動綁定成功！");
+    } catch (e) { alert("綁定失敗"); }
+  };
+
   const handleTeacherPreview = (sol: any) => {
     const url = sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : `https://drive.google.com/file/d/${sol.drive_file_id}/preview`;
     setViewingPreviewUrl(url);
@@ -143,6 +155,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950/80 p-4 md:p-8 pb-24 text-slate-800 dark:text-slate-100 transition-colors duration-500">
       
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
+        {/* Header Section */}
         <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl transition-colors">
           <div className="flex items-center gap-4"><div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black">T</div><h1 className="text-xl font-black hidden sm:block">TerryEdu Admin</h1></div>
           <div className="flex items-center gap-3">
@@ -151,6 +164,7 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* Tab Switcher */}
         <div className="flex justify-center gap-2 bg-white/70 dark:bg-slate-900/60 p-2 rounded-full shadow-lg border border-white/50 dark:border-slate-700/50 sticky top-4 z-40">
           {[{id:"solutions",label:"解答",icon:<Book size={16}/>,color:"bg-indigo-600"},{id:"students",label:"學生",icon:<Users size={16}/>,color:"bg-teal-600"},{id:"reports",label:"報表",icon:<BarChart3 size={16}/>,color:"bg-orange-500"}].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2 px-6 py-3 rounded-full font-bold transition-all ${activeTab === t.id ? `text-white ${t.color}` : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"}`}>{t.icon} {t.label}</button>
@@ -193,14 +207,14 @@ export default function AdminPage() {
 
               {activeTab === "students" && (
                 <div className="flex flex-col gap-8">
-                  {/* 🚀 維護模式控制台 */}
+                  {/* 維護模式控制台 */}
                   <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-4 transition-colors">
                     <div className="flex items-center gap-4">
                       <div className={`p-3 rounded-2xl ${maintenance.active ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
                         <ShieldCheck size={24} />
                       </div>
                       <div>
-                        <h3 className="font-black text-sm">系統維護開關</h3>
+                        <h3 className="font-black text-sm italic">系統維護開關</h3>
                         <p className="text-[10px] text-slate-500">當前狀態：{maintenance.active ? `維護中 (已允許 ${maintenance.testers.length} 名測試員)` : '正常運作中'}</p>
                       </div>
                     </div>
@@ -212,17 +226,17 @@ export default function AdminPage() {
                     </button>
                   </div>
 
-                  {/* 🚀 學生清單 (修復 UI 跑版) */}
+                  {/* 學生卡片清單 (Clean UI) */}
                   <div className="bg-white/70 dark:bg-slate-900/50 p-8 md:p-12 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
                     <h2 className="text-xl font-black mb-10 text-center flex items-center justify-center gap-3"><Users size={24} className="text-teal-600" /> 學生中心</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                       {students.map(s => (
                         <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center shadow-lg border-2 transition-all relative ${maintenance.active && maintenance.testers.includes(s.seat_number) ? 'border-orange-400' : 'border-transparent'}`}>
                           
-                          {/* 修正 Badge 位置與尺寸 */}
                           <div className="relative mb-6">
                             <img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-700 shadow-xl" referrerPolicy="no-referrer" />
-                            <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[10px] font-black w-7 h-7 flex items-center justify-center rounded-full border-2 border-white dark:border-slate-700 shadow-md">
+                            {/* 🚀 修復 Badge 位置 */}
+                            <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[10px] font-black w-8 h-8 flex items-center justify-center rounded-full border-2 border-white dark:border-slate-700 shadow-md">
                               {s.seat_number}
                             </div>
                             {maintenance.active && maintenance.testers.includes(s.seat_number) && (
@@ -258,15 +272,6 @@ export default function AdminPage() {
                     <div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 熱度分析</h2><div className="flex gap-2"><button onClick={fetchAdminData} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm"><RefreshCw size={12}/> 刷新</button></div></div>
                     <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>{chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip contentStyle={{ borderRadius: '2rem', border: 'none' }} /><Legend iconType="circle" /></PieChart></ResponsiveContainer>
                   </div>
-                  <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 overflow-y-auto max-h-[450px]">
-                    <h2 className="text-lg font-black mb-8 text-slate-800 dark:text-slate-100">🔥 熱門解答排行</h2>
-                    {[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,8).map((sol, i) => (
-                      <div key={sol.id} className="flex justify-between items-center p-5 bg-white/60 dark:bg-slate-800/60 rounded-[2rem] mb-4 shadow-sm border border-white/50 group hover:bg-white dark:hover:bg-slate-800 transition-colors">
-                        <span className="font-black text-gray-700 dark:text-slate-200 text-sm flex items-center"><span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-orange-300' : 'bg-indigo-300'}`}>{i+1}</span>{sol.title}</span>
-                        <span className="text-indigo-600 font-black bg-indigo-50 dark:bg-indigo-500/10 px-4 py-1 rounded-full text-xs">{sol.view_count || 0}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
             </motion.div>
@@ -274,14 +279,14 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* 🚀 測試員挑選視窗 */}
+      {/* 測試員挑選 Modal */}
       <AnimatePresence>
         {showTesterModal && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowTesterModal(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
             <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-8 w-full max-w-2xl shadow-2xl relative z-10 border dark:border-slate-700">
               <h3 className="text-xl font-black mb-2 flex items-center gap-2 text-orange-500">< ShieldCheck /> 設定測試人員</h3>
-              <p className="text-xs text-slate-500 mb-6 font-bold">請點擊選擇在維護期間仍可訪問系統的學生：</p>
+              <p className="text-xs text-slate-500 mb-6 font-bold">請挑選維護期間仍可訪問系統的學生座號：</p>
               
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-3 max-h-[300px] overflow-y-auto p-2 mb-8">
                 {students.map(s => (
@@ -306,6 +311,7 @@ export default function AdminPage() {
         )}
       </AnimatePresence>
 
+      {/* 觀看紀錄 Modal */}
       <AnimatePresence>
         {selectedStudent && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -316,7 +322,7 @@ export default function AdminPage() {
                 {viewLogs.filter(l => l.seat_number === selectedStudent.seat_number).map(log => {
                   const s = solutions.find(sol => sol.id === log.solution_id);
                   return (
-                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border shadow-sm hover:bg-white dark:hover:bg-slate-800 transition-colors">
+                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border shadow-sm hover:bg-white transition-colors">
                       <div className="flex flex-col"><span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除"}</span><span className="text-[10px] text-gray-400 mt-1">{log.viewed_at?.toDate().toLocaleString()}</span></div>
                       <button onClick={() => { if(confirm("刪除？")) writeBatch(db).delete(doc(db,"view_logs",log.id)).update(doc(db,"solutions",log.solution_id),{view_count:increment(-1)}).commit().then(fetchAdminData); }} className="bg-red-50 text-red-500 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all">刪除</button>
                     </div>
@@ -328,6 +334,7 @@ export default function AdminPage() {
         )}
       </AnimatePresence>
 
+      {/* 老師預覽 Modal */}
       <AnimatePresence>
         {viewingPreviewUrl && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-6 overflow-hidden">
@@ -339,6 +346,13 @@ export default function AdminPage() {
           </div>
         )}
       </AnimatePresence>
+
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; }
+      `}</style>
     </div>
   );
 }
