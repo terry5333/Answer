@@ -30,6 +30,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [isVerified, setIsVerified] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  
+  // 🚀 新增：學生端的快取破解時間戳記
+  const [fetchTime, setFetchTime] = useState(Date.now());
+
   const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
@@ -54,19 +58,17 @@ export default function DashboardPage() {
         
         const sRef = doc(db, "students", String(seat));
         const sSnap = await getDoc(sRef);
-        // 偵測到是老師，直接送回後台
-if (uSnap.data().role === "teacher") {
-  router.push("/admin");
-  return;
-}
-        // 🚀 核心修復：只同步頭像，鎖定「資料庫建檔的真實姓名」
+        
         let currentPhotoUrl = user.photoURL;
         let dbPhotoUrl = sSnap.exists() ? sSnap.data().photo_url : null;
-        let originalName = sSnap.exists() ? sSnap.data().name : uSnap.data().name; // 絕對優先使用建檔姓名
+        let originalName = sSnap.exists() ? sSnap.data().name : uSnap.data().name; 
 
         if (sSnap.exists() && dbPhotoUrl !== currentPhotoUrl) {
-          updateDoc(sRef, { photo_url: currentPhotoUrl }); // 拔除 name 的更新
+          updateDoc(sRef, { photo_url: currentPhotoUrl }); 
           dbPhotoUrl = currentPhotoUrl;
+          
+          // 🚀 核心修復：發現頭像更新時，立刻改變時間戳記，強迫瀏覽器抓新圖
+          setFetchTime(Date.now());
         }
 
         setUserData({ ...uSnap.data(), name: originalName, photo_url: dbPhotoUrl });
@@ -97,17 +99,43 @@ if (uSnap.data().role === "teacher") {
         <div className="min-h-[80vh] flex items-center justify-center"><div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-2xl p-12 rounded-[3.5rem] text-center shadow-2xl border border-white/50 dark:border-slate-800 max-w-sm w-full"><h1 className="text-xl font-black mb-8 text-indigo-900 dark:text-indigo-300 flex items-center justify-center gap-2"><ShieldCheck /> 安全驗證</h1><Turnstile siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!} onSuccess={() => setIsVerified(true)} /></div></div>
       ) : (
         <div className="max-w-6xl mx-auto flex flex-col gap-8">
-          <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 md:p-8 flex justify-between items-center shadow-xl">
-            <div className="flex items-center gap-4"><div className="w-12 h-12 bg-teal-500 rounded-2xl flex items-center justify-center text-white shadow-lg"><BookOpen size={24} /></div><h1 className="text-xl font-black italic">TerryEdu</h1></div>
-            <div className="flex items-center gap-3">
-              {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-11 h-11 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={18}/> : <Moon size={18}/>}</button>}
-              <div className="flex items-center gap-3 bg-slate-100/50 dark:bg-slate-800/50 p-1.5 pr-5 rounded-full border border-white dark:border-slate-700 transition-all">
-                <img src={userData?.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} className="w-9 h-9 rounded-full border-2 border-white shadow-sm" referrerPolicy="no-referrer" />
-                <span className="font-black text-sm">{userData?.seat_number} 號 {userData?.name}</span>
-                <button onClick={() => { signOut(auth); router.push("/login"); }} className="ml-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut size={18} /></button>
+          
+          {/* Header 區塊：包含 RWD 防擠壓修復與快取破解 */}
+          <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2rem] md:rounded-[2.5rem] p-4 sm:p-6 md:p-8 flex justify-between items-center shadow-xl gap-2 md:gap-4">
+            
+            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-teal-500 rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0">
+                <BookOpen className="w-5 h-5 md:w-6 md:h-6" />
+              </div>
+              <h1 className="text-base sm:text-lg md:text-xl font-black italic shrink-0">TerryEdu</h1>
+            </div>
+            
+            <div className="flex items-center gap-2 md:gap-3 min-w-0">
+              {mounted && (
+                <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-9 h-9 md:w-11 md:h-11 shrink-0 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">
+                  {resolvedTheme === "dark" ? <Sun size={14} className="md:w-4 md:h-4"/> : <Moon size={14} className="md:w-4 md:h-4"/>}
+                </button>
+              )}
+              
+              <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-100/50 dark:bg-slate-800/50 p-1 md:p-1.5 pr-3 md:pr-5 rounded-full border border-white dark:border-slate-700 transition-all min-w-0">
+                {/* 🚀 核心修復：在圖片 src 後面加上 ?t=${fetchTime} */}
+                <img 
+                  src={userData?.photo_url ? `${userData.photo_url}?t=${fetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} 
+                  className="w-7 h-7 md:w-9 md:h-9 rounded-full border-2 border-white shadow-sm shrink-0 object-cover" 
+                  referrerPolicy="no-referrer" 
+                />
+                
+                <span className="font-black text-xs md:text-sm truncate max-w-[75px] sm:max-w-[150px]">
+                  {userData?.seat_number} 號 {userData?.name}
+                </span>
+                
+                <button onClick={() => { signOut(auth); router.push("/login"); }} className="ml-1 md:ml-2 text-slate-400 hover:text-red-500 transition-colors shrink-0">
+                  <LogOut size={14} className="md:w-[18px] md:h-[18px]" />
+                </button>
               </div>
             </div>
           </div>
+
           <div className="px-2"><select value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="appearance-none bg-white/70 dark:bg-slate-900/60 backdrop-blur-md border border-white dark:border-slate-700/50 rounded-full px-10 py-4 font-black shadow-lg text-sm dark:text-slate-200 min-w-[180px] hover:bg-white outline-none cursor-pointer"><option value="全部">🔍 全部科目</option>{Array.from(new Set(solutions.map(s => s.subject))).map(sub => <option key={sub} value={sub}>{sub}</option>)}</select></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">{solutions.filter(s => selectedSubject === "全部" || s.subject === selectedSubject).map(sol => (
             <motion.div key={sol.id} whileHover={{ y: -8, scale: 1.02 }} onClick={() => { const target = sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : (sol.drive_file_id ? `https://drive.google.com/file/d/${sol.drive_file_id}/preview` : ""); if(target) { writeBatch(db).update(doc(db,"solutions",sol.id),{view_count:increment(1)}).set(doc(collection(db,"view_logs")),{seat_number:userData.seat_number,solution_id:sol.id,viewed_at:serverTimestamp()}).commit().then(() => setViewingPreviewUrl(target)); } }} className="group bg-white/60 dark:bg-slate-900/50 backdrop-blur-md p-10 rounded-[3.5rem] border border-white dark:border-slate-800/50 shadow-xl hover:shadow-2xl transition-all cursor-pointer relative overflow-hidden"><div className="absolute top-0 left-0 w-2.5 h-full bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" /><div className="flex flex-col h-full justify-between"><div><div className="text-[10px] text-teal-600 dark:text-teal-400 font-black mb-4 tracking-[0.2em] uppercase bg-teal-50 dark:bg-teal-500/10 px-4 py-1.5 rounded-full w-fit">{sol.subject}</div><h3 className="font-black text-xl md:text-2xl text-slate-800 dark:text-slate-100 group-hover:text-teal-600 transition-colors leading-tight">{sol.title}</h3></div><div className="flex items-center justify-between mt-12"><div className="flex items-center gap-2 text-slate-400 font-bold text-xs"><FileText size={14} /> PDF 解答</div><div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:bg-teal-500 group-hover:text-white transition-all shadow-inner"><ChevronRight size={20} /></div></div></div></motion.div>
