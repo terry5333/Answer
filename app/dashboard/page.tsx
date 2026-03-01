@@ -54,7 +54,11 @@ export default function DashboardPage() {
         
         const sRef = doc(db, "students", String(seat));
         const sSnap = await getDoc(sRef);
-        
+        // 偵測到是老師，直接送回後台
+if (uSnap.data().role === "teacher") {
+  router.push("/admin");
+  return;
+}
         // 🚀 核心修復：只同步頭像，鎖定「資料庫建檔的真實姓名」
         let currentPhotoUrl = user.photoURL;
         let dbPhotoUrl = sSnap.exists() ? sSnap.data().photo_url : null;
