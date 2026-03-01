@@ -31,9 +31,10 @@ export default function AdminPage() {
   // 紀錄、預覽與編輯狀態
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [viewingPreviewUrl, setViewingPreviewUrl] = useState<string | null>(null);
-  const [editingStudent, setEditingStudent] = useState<any>(null); // 🚀 新增：控制改名 Modal
-  const [editName, setEditName] = useState("");                    // 🚀 新增：暫存修改的姓名
+  const [editingStudent, setEditingStudent] = useState<any>(null);
+  const [editName, setEditName] = useState("");
   
+  // 比對狀態
   const [orphanedFiles, setOrphanedFiles] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -162,17 +163,13 @@ export default function AdminPage() {
     } catch (e) { alert("建檔失敗"); }
   };
 
-  // 🚀 新增：處理修改學生姓名邏輯
   const handleUpdateStudent = async () => {
     if (!editName.trim() || !editingStudent) return;
     try {
       await updateDoc(doc(db, "students", editingStudent.id), { name: editName.trim() });
-      
-      // 如果學生已綁定，同步更新 users 表裡的名字，確保 Dashboard 顯示一致
       if (editingStudent.bound_uid) {
         await updateDoc(doc(db, "users", editingStudent.bound_uid), { name: editName.trim() });
       }
-      
       await fetchAdminData();
       setEditingStudent(null);
       alert("✅ 學生資料已更新");
@@ -269,9 +266,18 @@ export default function AdminPage() {
 
               {activeTab === "students" && (
                 <div className="flex flex-col gap-8">
+                  {/* 🚀 頂部控制面板：新增學生建檔 & 維護模式 */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-col justify-center transition-colors">
-                      <h2 className="font-black text-sm mb-4 flex items-center gap-2"><PlusCircle size={18} className="text-teal-500"/> 新增學生建檔</h2>
+                    <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-col justify-center transition-colors relative">
+                      <div className="flex justify-between items-center mb-4">
+                        <h2 className="font-black text-sm flex items-center gap-2">
+                          <PlusCircle size={18} className="text-teal-500"/> 新增學生建檔
+                        </h2>
+                        {/* 🚀 核心修復：加入手動刷新名單按鈕 */}
+                        <button onClick={fetchAdminData} className="flex items-center gap-2 bg-teal-50 dark:bg-teal-500/10 text-teal-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm hover:bg-teal-100 dark:hover:bg-teal-500/20 transition-all active:scale-95">
+                          <RefreshCw size={12}/> 刷新名單
+                        </button>
+                      </div>
                       <div className="flex gap-3">
                         <input type="number" value={newSeat} onChange={e => setNewSeat(e.target.value)} placeholder="座號" className="w-24 bg-white dark:bg-slate-800 rounded-full px-5 py-3 font-bold text-sm shadow-inner transition-colors outline-none" />
                         <input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="學生姓名" className="flex-1 bg-white dark:bg-slate-800 rounded-full px-5 py-3 font-bold text-sm shadow-inner transition-colors outline-none" />
@@ -289,7 +295,6 @@ export default function AdminPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">{students.map(s => (
                       <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center shadow-lg border-2 relative transition-all ${maintenance.active && maintenance.testers.includes(Number(s.seat_number)) ? 'border-orange-400' : 'border-transparent'}`}>
                         
-                        {/* 🚀 改名按鈕：優雅懸浮在右上角 */}
                         <button 
                           onClick={() => { setEditingStudent(s); setEditName(s.name); }} 
                           className="absolute top-5 right-5 text-slate-300 hover:text-teal-500 transition-colors bg-white/50 dark:bg-slate-800/50 p-2 rounded-xl backdrop-blur-sm"
@@ -331,7 +336,6 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* 🚀 改名專用 Modal */}
       <AnimatePresence>
         {editingStudent && (
           <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
@@ -359,7 +363,6 @@ export default function AdminPage() {
         )}
       </AnimatePresence>
 
-      {/* 其他所有 Modal (Sync, Tester, Preview, ViewLogs) 保持不變... */}
       <AnimatePresence>
         {showSyncModal && (
           <div className="fixed inset-0 z-[130] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowSyncModal(false)} /><motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border border-white/20 transition-colors"><div className="flex justify-between items-center mb-6 border-b pb-4 dark:border-slate-800"><div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400"><Search size={24} /><h3 className="text-xl font-black italic tracking-tight">雲端孤兒檔案比對</h3></div><button onClick={() => setShowSyncModal(false)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500">✕</button></div>{isSyncing ? <div className="py-20 text-center flex flex-col items-center gap-4"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full" /><p className="text-slate-500 font-bold animate-pulse">正在掃描雲端檔案庫...</p></div> : <div className="space-y-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2">{orphanedFiles.length === 0 ? <div className="py-20 text-center flex flex-col items-center gap-4 text-green-500"><CheckCircle size={48} /><p className="font-black text-sm px-10 italic">雲端與資料庫檔案已完全對齊！</p></div> : <><div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-500/20 mb-6"><p className="text-xs text-orange-600 dark:text-orange-400 font-bold flex items-center gap-2"><AlertTriangle size={14}/> 發現 {orphanedFiles.length} 個在雲端但不在資料庫的檔案。</p></div>{orphanedFiles.map(file => <div key={file.id} className="flex justify-between items-center p-5 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border border-white/50 dark:border-slate-700/50 group transition-all"><div className="flex flex-col gap-1 overflow-hidden"><span className="font-black text-sm truncate dark:text-slate-200">{file.name}</span><span className="text-[9px] text-slate-400 font-mono truncate">{file.id}</span></div><button onClick={() => handleSyncDelete(file.url)} className="bg-red-50 text-red-500 p-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white shadow-sm transition-all"><Trash2 size={16}/></button></div>)}</>}</div >}</motion.div></div>
