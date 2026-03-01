@@ -48,7 +48,6 @@ export default function DashboardPage() {
         const isT = uSnap.data().role === "teacher";
         const seat = uSnap.data().seat_number;
         
-        // 維護模式攔截
         if (mSnap.exists() && mSnap.data().active && !isT && !(mSnap.data().testers || []).includes(seat)) { 
           setIsBlocked(true); setLoading(false); return; 
         }
@@ -56,24 +55,17 @@ export default function DashboardPage() {
         const sRef = doc(db, "students", String(seat));
         const sSnap = await getDoc(sRef);
         
-        // 🚀 核心魔法：靜默比對與自動更新
+        // 🚀 核心修復：只同步頭像，鎖定「資料庫建檔的真實姓名」
         let currentPhotoUrl = user.photoURL;
-        let currentName = user.displayName;
         let dbPhotoUrl = sSnap.exists() ? sSnap.data().photo_url : null;
-        let dbName = sSnap.exists() ? sSnap.data().name : uSnap.data().name;
+        let originalName = sSnap.exists() ? sSnap.data().name : uSnap.data().name; // 絕對優先使用建檔姓名
 
-        // 如果發現 Google 的資料跟資料庫不一樣，就在背景偷偷更新
-        if (sSnap.exists() && (dbPhotoUrl !== currentPhotoUrl || (currentName && dbName !== currentName))) {
-          const finalName = currentName || dbName;
-          updateDoc(sRef, { photo_url: currentPhotoUrl, name: finalName });
-          updateDoc(doc(db, "users", user.uid), { name: finalName });
-          
+        if (sSnap.exists() && dbPhotoUrl !== currentPhotoUrl) {
+          updateDoc(sRef, { photo_url: currentPhotoUrl }); // 拔除 name 的更新
           dbPhotoUrl = currentPhotoUrl;
-          dbName = finalName;
-          console.log("🔄 已在背景自動同步最新大頭貼與姓名"); // 開發者彩蛋
         }
 
-        setUserData({ ...uSnap.data(), name: dbName, photo_url: dbPhotoUrl });
+        setUserData({ ...uSnap.data(), name: originalName, photo_url: dbPhotoUrl });
         
         const solSnap = await getDocs(collection(db, "solutions"));
         setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -106,7 +98,6 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3">
               {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-11 h-11 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={18}/> : <Moon size={18}/>}</button>}
               <div className="flex items-center gap-3 bg-slate-100/50 dark:bg-slate-800/50 p-1.5 pr-5 rounded-full border border-white dark:border-slate-700 transition-all">
-                {/* 這裡直接吃上面處理好的 userData.photo_url */}
                 <img src={userData?.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} className="w-9 h-9 rounded-full border-2 border-white shadow-sm" referrerPolicy="no-referrer" />
                 <span className="font-black text-sm">{userData?.seat_number} 號 {userData?.name}</span>
                 <button onClick={() => { signOut(auth); router.push("/login"); }} className="ml-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut size={18} /></button>
