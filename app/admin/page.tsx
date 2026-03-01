@@ -44,6 +44,9 @@ export default function AdminPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [sortMethod, setSortMethod] = useState("time");
   
+  // 🚀 新增：用來破解圖片快取的時間戳記
+  const [lastFetchTime, setLastFetchTime] = useState(Date.now());
+  
   const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
@@ -71,6 +74,9 @@ export default function AdminPage() {
       setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setStudents(stuSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setViewLogs(logSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
+      // 🚀 核心修復：每次抓完資料，更新時間戳記以強制瀏覽器刷新圖片
+      setLastFetchTime(Date.now());
     } catch (e) { console.error(e); }
   };
 
@@ -266,14 +272,12 @@ export default function AdminPage() {
 
               {activeTab === "students" && (
                 <div className="flex flex-col gap-8">
-                  {/* 🚀 頂部控制面板：新增學生建檔 & 維護模式 */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-col justify-center transition-colors relative">
                       <div className="flex justify-between items-center mb-4">
                         <h2 className="font-black text-sm flex items-center gap-2">
                           <PlusCircle size={18} className="text-teal-500"/> 新增學生建檔
                         </h2>
-                        {/* 🚀 核心修復：加入手動刷新名單按鈕 */}
                         <button onClick={fetchAdminData} className="flex items-center gap-2 bg-teal-50 dark:bg-teal-500/10 text-teal-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm hover:bg-teal-100 dark:hover:bg-teal-500/20 transition-all active:scale-95">
                           <RefreshCw size={12}/> 刷新名單
                         </button>
@@ -303,7 +307,10 @@ export default function AdminPage() {
                         </button>
 
                         <div className="relative mb-6">
-                          <div className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-700 shadow-xl overflow-hidden"><img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" /></div>
+                          <div className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-700 shadow-xl overflow-hidden">
+                            {/* 🚀 核心修復：加入 ?t=${lastFetchTime} 破解快取 */}
+                            <img src={s.photo_url ? `${s.photo_url}?t=${lastFetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
                           <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[12px] font-black w-8 h-8 flex items-center justify-center rounded-full border-4 border-white dark:border-slate-700 shadow-md">{s.seat_number}</div>
                         </div>
                         <div className="font-black text-xl mb-6 dark:text-white">{s.name}</div>
@@ -386,7 +393,14 @@ export default function AdminPage() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/80 backdrop-blur-md" onClick={() => setSelectedStudent(null)} />
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[3.5rem] p-8 md:p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative z-10 border border-white/20 transition-colors">
-              <div className="flex justify-between items-center mb-6 pb-4 border-b dark:border-slate-800"><div className="flex items-center gap-4"><img src={selectedStudent.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-md" /><h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3></div><button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500 hover:bg-slate-200 transition-colors">✕</button></div>
+              <div className="flex justify-between items-center mb-6 pb-4 border-b dark:border-slate-800">
+                <div className="flex items-center gap-4">
+                  {/* 🚀 核心修復：觀看紀錄彈窗裡的頭像也加入破解快取 */}
+                  <img src={selectedStudent.photo_url ? `${selectedStudent.photo_url}?t=${lastFetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-md" referrerPolicy="no-referrer" />
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3>
+                </div>
+                <button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500 hover:bg-slate-200 transition-colors">✕</button>
+              </div>
               <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
                 {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).map(log => {
                   const s = solutions.find(sol => sol.id === log.solution_id);
