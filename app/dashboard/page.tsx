@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { collection, getDocs, doc, getDoc, writeBatch, increment, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, writeBatch, increment, serverTimestamp, updateDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { Turnstile } from "@marsidev/react-turnstile";
@@ -42,19 +42,39 @@ export default function DashboardPage() {
         const [uSnap, mSnap] = await Promise.all([getDoc(doc(db, "users", user.uid)), getDoc(doc(db, "settings", "maintenance"))]);
         
         if (!uSnap.exists() || !uSnap.data().seat_number) {
-           router.push("/login"); return; // 未綁定者退回 Login 完成綁定
+           router.push("/login"); return; 
         }
-// 偵測到是老師，直接送回後台
-if (uSnap.data().role === "teacher") {
-  router.push("/admin");
-  return;
-}
+
         const isT = uSnap.data().role === "teacher";
         const seat = uSnap.data().seat_number;
-        if (mSnap.exists() && mSnap.data().active && !isT && !(mSnap.data().testers || []).includes(seat)) { setIsBlocked(true); setLoading(false); return; }
         
-        const sSnap = await getDoc(doc(db, "students", String(seat)));
-        setUserData({ ...uSnap.data(), name: sSnap.exists() ? sSnap.data().name : uSnap.data().name });
+        // 維護模式攔截
+        if (mSnap.exists() && mSnap.data().active && !isT && !(mSnap.data().testers || []).includes(seat)) { 
+          setIsBlocked(true); setLoading(false); return; 
+        }
+        
+        const sRef = doc(db, "students", String(seat));
+        const sSnap = await getDoc(sRef);
+        
+        // 🚀 核心魔法：靜默比對與自動更新
+        let currentPhotoUrl = user.photoURL;
+        let currentName = user.displayName;
+        let dbPhotoUrl = sSnap.exists() ? sSnap.data().photo_url : null;
+        let dbName = sSnap.exists() ? sSnap.data().name : uSnap.data().name;
+
+        // 如果發現 Google 的資料跟資料庫不一樣，就在背景偷偷更新
+        if (sSnap.exists() && (dbPhotoUrl !== currentPhotoUrl || (currentName && dbName !== currentName))) {
+          const finalName = currentName || dbName;
+          updateDoc(sRef, { photo_url: currentPhotoUrl, name: finalName });
+          updateDoc(doc(db, "users", user.uid), { name: finalName });
+          
+          dbPhotoUrl = currentPhotoUrl;
+          dbName = finalName;
+          console.log("🔄 已在背景自動同步最新大頭貼與姓名"); // 開發者彩蛋
+        }
+
+        setUserData({ ...uSnap.data(), name: dbName, photo_url: dbPhotoUrl });
+        
         const solSnap = await getDocs(collection(db, "solutions"));
         setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (e) { console.error(e); }
@@ -83,7 +103,15 @@ if (uSnap.data().role === "teacher") {
         <div className="max-w-6xl mx-auto flex flex-col gap-8">
           <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 md:p-8 flex justify-between items-center shadow-xl">
             <div className="flex items-center gap-4"><div className="w-12 h-12 bg-teal-500 rounded-2xl flex items-center justify-center text-white shadow-lg"><BookOpen size={24} /></div><h1 className="text-xl font-black italic">TerryEdu</h1></div>
-            <div className="flex items-center gap-3">{mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-11 h-11 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={18}/> : <Moon size={18}/>}</button>}<div className="flex items-center gap-3 bg-slate-100/50 dark:bg-slate-800/50 p-1.5 pr-5 rounded-full border border-white dark:border-slate-700 transition-all"><img src={auth.currentUser?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} className="w-9 h-9 rounded-full border-2 border-white shadow-sm" /><span className="font-black text-sm">{userData?.seat_number} 號 {userData?.name}</span><button onClick={() => { signOut(auth); router.push("/login"); }} className="ml-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut size={18} /></button></div></div>
+            <div className="flex items-center gap-3">
+              {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-11 h-11 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={18}/> : <Moon size={18}/>}</button>}
+              <div className="flex items-center gap-3 bg-slate-100/50 dark:bg-slate-800/50 p-1.5 pr-5 rounded-full border border-white dark:border-slate-700 transition-all">
+                {/* 這裡直接吃上面處理好的 userData.photo_url */}
+                <img src={userData?.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} className="w-9 h-9 rounded-full border-2 border-white shadow-sm" referrerPolicy="no-referrer" />
+                <span className="font-black text-sm">{userData?.seat_number} 號 {userData?.name}</span>
+                <button onClick={() => { signOut(auth); router.push("/login"); }} className="ml-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut size={18} /></button>
+              </div>
+            </div>
           </div>
           <div className="px-2"><select value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="appearance-none bg-white/70 dark:bg-slate-900/60 backdrop-blur-md border border-white dark:border-slate-700/50 rounded-full px-10 py-4 font-black shadow-lg text-sm dark:text-slate-200 min-w-[180px] hover:bg-white outline-none cursor-pointer"><option value="全部">🔍 全部科目</option>{Array.from(new Set(solutions.map(s => s.subject))).map(sub => <option key={sub} value={sub}>{sub}</option>)}</select></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">{solutions.filter(s => selectedSubject === "全部" || s.subject === selectedSubject).map(sol => (
