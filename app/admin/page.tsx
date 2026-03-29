@@ -47,7 +47,6 @@ export default function AdminPage() {
   
   const [lastFetchTime, setLastFetchTime] = useState(Date.now());
   
-  // 🚀 新增：版本控制狀態
   const [systemVersion, setSystemVersion] = useState("v1.0.0");
   const [systemNotes, setSystemNotes] = useState("");
 
@@ -82,7 +81,6 @@ export default function AdminPage() {
     } catch (e) { console.error(e); }
   };
 
-  // 🚀 新增：抓取系統設定（包含維護模式與版本更新日誌）
   const fetchSystemSettings = async () => {
     try {
       const mSnap = await getDoc(doc(db, "settings", "maintenance"));
@@ -100,7 +98,6 @@ export default function AdminPage() {
     } catch(e) { console.error("抓取設定失敗", e); }
   };
 
-  // 🚀 新增：發佈更新日誌
   const handlePublishUpdate = async () => {
     if (!systemVersion.trim() || !systemNotes.trim()) return alert("請填寫版本號與更新內容！");
     try {
@@ -269,7 +266,11 @@ export default function AdminPage() {
                         <div className="flex flex-col sm:flex-row gap-4 items-center w-full">
                           <div className="flex-1 flex w-full gap-2 items-center">
                             <select name="fileId" required className="flex-1 bg-white dark:bg-slate-800 rounded-full px-5 py-3.5 font-bold text-sm shadow-inner transition-colors cursor-pointer dark:text-slate-200 outline-none">
-                              {availableFiles.length === 0 ? <option value="">無待綁定檔案，請先點擊右方刷新...</option> : <option value="">選擇已上傳的 PDF 檔案...</option>}
+                              {availableFiles.length === 0 ? (
+                                <option value="">無待綁定檔案，請先點擊右方刷新...</option>
+                              ) : (
+                                <option value="">選擇已上傳的 PDF 檔案...</option>
+                              )}
                               {availableFiles.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                             </select>
                             <button type="button" onClick={fetchDriveFiles} className="bg-white dark:bg-slate-800 p-3.5 rounded-full shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-500 flex-shrink-0 active:scale-95">
@@ -294,10 +295,8 @@ export default function AdminPage() {
 
               {activeTab === "students" && (
                 <div className="flex flex-col gap-8">
-                  {/* 🚀 學生與系統設定整合區塊 */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     
-                    {/* 新增學生建檔 */}
                     <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-col justify-center transition-colors relative">
                       <div className="flex justify-between items-center mb-4">
                         <h2 className="font-black text-sm flex items-center gap-2"><PlusCircle size={18} className="text-teal-500"/> 新增學生建檔</h2>
@@ -310,13 +309,12 @@ export default function AdminPage() {
                       </div>
                     </div>
 
-                    {/* 維護模式 */}
                     <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-col justify-center gap-4 transition-colors">
                       <div className="flex items-center gap-4"><div className={`p-3 rounded-2xl shrink-0 ${maintenance.active ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}><ShieldCheck size={24} /></div><div><h3 className="font-black text-sm italic">維護系統狀態</h3><p className="text-[10px] text-slate-500">{maintenance.active ? `維護中 (已允許 ${maintenance.testers.length} 名測試員)` : '正常運作中'}</p></div></div>
-                      <button onClick={() => { if(maintenance.active) setDoc(doc(db,"settings","maintenance"),{active:false,testers:[]}).then(() => fetchMaintenanceStatus()); else setShowTesterModal(true); }} className={`w-full py-3 rounded-full font-black text-xs shadow-md transition-all ${maintenance.active ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-orange-500 text-white hover:bg-orange-600'}`}>{maintenance.active ? '關閉維護開放登入' : '啟動維護模式'}</button>
+                      {/* 🚀 修正這裡：呼叫 fetchSystemSettings */}
+                      <button onClick={() => { if(maintenance.active) setDoc(doc(db,"settings","maintenance"),{active:false,testers:[]}).then(() => fetchSystemSettings()); else setShowTesterModal(true); }} className={`w-full py-3 rounded-full font-black text-xs shadow-md transition-all ${maintenance.active ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-orange-500 text-white hover:bg-orange-600'}`}>{maintenance.active ? '關閉維護開放登入' : '啟動維護模式'}</button>
                     </div>
 
-                    {/* 🚀 新增：版本發佈中心 */}
                     <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white dark:border-slate-700/50 flex flex-col justify-center transition-colors lg:col-span-3 xl:col-span-1">
                       <h2 className="font-black text-sm mb-4 flex items-center gap-2 text-indigo-500"><Sparkles size={18}/> 發佈系統更新日誌</h2>
                       <div className="flex flex-col gap-3">
@@ -347,7 +345,6 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* Reports 保持不變... 為了節省篇幅直接套用上一版的即可 */}
               {activeTab === "reports" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50 h-[450px] flex flex-col items-center transition-colors"><div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 熱度分析</h2><div className="flex gap-2"><button onClick={fetchAdminData} className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm active:scale-95"><RefreshCw size={12}/> 刷新</button><button onClick={handleDataRepair} className="bg-red-50 dark:bg-red-500/10 text-red-600 px-4 py-2 rounded-full text-[10px] font-bold border border-red-100 shadow-sm hover:bg-red-100 transition-all active:scale-95"><AlertTriangle size={12}/> 強制校正</button></div></div><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={subjects.map(sub => ({ name: sub.name, value: solutions.filter(s => s.subject === sub.name).reduce((sum, s) => sum + (s.view_count || 0), 0) })).filter(d => d.value > 0)} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" cornerRadius={10} paddingAngle={5}>{COLORS.map((c, i) => <Cell key={i} fill={c} />)}</Pie><Tooltip contentStyle={{ borderRadius: '2rem', border: 'none', backgroundColor: resolvedTheme === 'dark' ? '#1e293b' : '#ffffff' }} /><Legend iconType="circle" /></PieChart></ResponsiveContainer></div>
@@ -359,9 +356,76 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* 所有的 Modals (編輯姓名、比對、維護、觀看紀錄) 保持不變，直接套用上一版 */}
-      {/* ... 省略以避免過長 ... */}
-      
+      <AnimatePresence>
+        {editingStudent && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setEditingStudent(null)} />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-sm shadow-2xl relative z-10 border border-white/20 transition-colors">
+              <h3 className="text-xl font-black mb-6 flex items-center gap-3 text-slate-800 dark:text-slate-100"><Edit2 size={20} className="text-teal-500"/> 編輯學生姓名</h3>
+              <div className="mb-8">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4 mb-2 block">座號 {editingStudent.seat_number}</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-6 py-4 font-black text-lg outline-none focus:border-teal-500 transition-colors dark:text-white" autoFocus />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setEditingStudent(null)} className="flex-1 py-3.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors">取消</button>
+                <button onClick={handleUpdateStudent} className="flex-1 py-3.5 rounded-full font-bold bg-teal-500 text-white shadow-xl shadow-teal-500/20 active:scale-95 transition-all">儲存修改</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSyncModal && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowSyncModal(false)} /><motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border border-white/20 transition-colors"><div className="flex justify-between items-center mb-6 border-b pb-4 dark:border-slate-800"><div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400"><Search size={24} /><h3 className="text-xl font-black italic tracking-tight">雲端檔案管理</h3></div><button onClick={() => setShowSyncModal(false)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500">✕</button></div>{isSyncing ? <div className="py-20 text-center flex flex-col items-center gap-4"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full" /><p className="text-slate-500 font-bold animate-pulse">正在掃描雲端檔案庫...</p></div> : <div className="space-y-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2">{orphanedFiles.length === 0 ? <div className="py-20 text-center flex flex-col items-center gap-4 text-green-500"><CheckCircle size={48} /><p className="font-black text-sm px-10 italic">雲端資料匣非常乾淨，沒有未綁定的檔案！</p></div> : <><div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-500/20 mb-6"><p className="text-xs text-orange-600 dark:text-orange-400 font-bold flex items-center gap-2"><AlertTriangle size={14}/> 發現 {orphanedFiles.length} 個尚未綁定至系統的檔案，您可以將其刪除以節省空間。</p></div>{orphanedFiles.map(file => <div key={file.id} className="flex justify-between items-center p-5 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border border-white/50 dark:border-slate-700/50 group transition-all"><div className="flex flex-col gap-1 overflow-hidden"><span className="font-black text-sm truncate dark:text-slate-200">{file.name}</span><span className="text-[9px] text-slate-400 font-mono truncate">{file.id}</span></div><button onClick={() => handleSyncDelete(file.url)} className="bg-red-50 text-red-500 p-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white shadow-sm transition-all" title="永久刪除"><Trash2 size={16}/></button></div>)}</>}</div >}</motion.div></div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showTesterModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowTesterModal(false)} /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border border-white/20"><h3 className="text-xl font-black mb-4 flex items-center gap-2 text-orange-500 tracking-tight italic">< ShieldCheck /> 設定維護期測試人員</h3><div className="grid grid-cols-4 sm:grid-cols-6 gap-3 mb-8 max-h-[300px] overflow-y-auto custom-scrollbar p-2">{students.map(s => <button key={s.seat_number} onClick={() => setSelectedTesters(prev => prev.includes(Number(s.seat_number)) ? prev.filter(n => n !== Number(s.seat_number)) : [...prev, Number(s.seat_number)])} className={`h-12 rounded-2xl font-black text-sm border-2 transition-all ${selectedTesters.includes(Number(s.seat_number)) ? 'bg-orange-500 text-white border-orange-500 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-transparent hover:border-slate-300'}`}>{s.seat_number}</button>)}</div><div className="flex gap-4"><button onClick={() => setShowTesterModal(false)} className="flex-1 py-4 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors">取消</button>
+          {/* 🚀 修正這裡：呼叫 fetchSystemSettings */}
+          <button onClick={() => setDoc(doc(db,"settings","maintenance"),{active:true,testers:selectedTesters}).then(() => { fetchSystemSettings(); setShowTesterModal(false); alert("✅ 維護已啟動"); })} className="flex-1 py-4 rounded-full font-bold bg-orange-500 text-white shadow-xl active:scale-95 transition-all">啟動維護</button></div></motion.div></div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {viewingPreviewUrl && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-0 md:p-6 overflow-hidden"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-lg" onClick={() => setViewingPreviewUrl(null)} /><motion.div initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} className="bg-white dark:bg-slate-900 rounded-t-[3rem] md:rounded-[3.5rem] w-full max-w-5xl h-[95vh] flex flex-col relative z-10 overflow-hidden shadow-2xl border border-white/20 transition-colors"><div className="p-8 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20 transition-colors"><div className="flex items-center gap-3"><div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl"><BookOpen size={20} className="text-indigo-600" /></div><span className="font-black text-lg italic tracking-tight">管理員預覽模式</span></div><button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 hover:text-white rounded-full font-bold shadow-sm transition-all">✕</button></div><iframe src={viewingPreviewUrl} className="flex-1 w-full border-none" title="PDF Preview" /></motion.div></div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedStudent && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/80 backdrop-blur-md" onClick={() => setSelectedStudent(null)} />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[3.5rem] p-8 md:p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative z-10 border border-white/20 transition-colors">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b dark:border-slate-800">
+                <div className="flex items-center gap-4">
+                  <img src={selectedStudent.photo_url ? `${selectedStudent.photo_url}?t=${lastFetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-md" referrerPolicy="no-referrer" />
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3>
+                </div>
+                <button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500 hover:bg-slate-200 transition-colors">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
+                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).map(log => {
+                  const s = solutions.find(sol => sol.id === log.solution_id);
+                  return (
+                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border border-white/50 dark:border-slate-700/50 shadow-sm hover:bg-white dark:hover:bg-slate-800 transition-colors">
+                      <div className="flex flex-col"><span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除解答"}</span><span className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span></div>
+                      <button onClick={() => { if(confirm("刪除此紀錄並扣除次數？")) writeBatch(db).delete(doc(db,"view_logs",log.id)).update(doc(db,"solutions",log.solution_id),{view_count:increment(-1)}).commit().then(fetchAdminData); }} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white shadow-sm">刪除</button>
+                    </div>
+                  );
+                })}
+                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).length === 0 && (
+                  <div className="py-20 text-center text-slate-400 italic font-bold">目前尚無觀看紀錄</div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
