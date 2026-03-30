@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, Users, BarChart3, Book, AlertTriangle, Eye, Sun, Moon, BookOpen, ShieldCheck, Search, Trash2, CheckCircle, Trophy, PlusCircle, Edit2, Link as LinkIcon, Sparkles } from "lucide-react";
+import { RefreshCw, Users, BarChart3, Book, AlertTriangle, Eye, Sun, Moon, BookOpen, ShieldCheck, Search, Trash2, CheckCircle, Trophy, PlusCircle, Edit2, Link as LinkIcon, Sparkles, Link2Off, Link2 } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#60a5fa'];
@@ -19,6 +19,7 @@ export default function AdminPage() {
   const [solutions, setSolutions] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [viewLogs, setViewLogs] = useState<any[]>([]);
+  const [systemUsers, setSystemUsers] = useState<any[]>([]); // 🚀 儲存所有使用者的綁定狀態
   
   const [newSubject, setNewSubject] = useState(""); 
   const [newSeat, setNewSeat] = useState("");
@@ -43,7 +44,6 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [isVerified, setIsVerified] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [sortMethod, setSortMethod] = useState("time");
   
   const [lastFetchTime, setLastFetchTime] = useState(Date.now());
   const [systemVersion, setSystemVersion] = useState("v2.0.0");
@@ -72,11 +72,13 @@ export default function AdminPage() {
       const solSnap = await getDocs(query(collection(db, "solutions"), orderBy("created_at", "desc")));
       const stuSnap = await getDocs(query(collection(db, "students"), orderBy("seat_number", "asc")));
       const logSnap = await getDocs(query(collection(db, "view_logs"), orderBy("viewed_at", "desc")));
+      const userSnap = await getDocs(collection(db, "users")); // 🚀 抓取 Google 帳號關聯
       
       setSubjects(subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setStudents(stuSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setViewLogs(logSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setSystemUsers(userSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLastFetchTime(Date.now());
     } catch (e) { console.error(e); }
   };
@@ -90,12 +92,64 @@ export default function AdminPage() {
     } catch(e) { console.error("抓取設定失敗", e); }
   };
 
+  // --- 神器 1：解綁與綁定 ---
+  const handleUnbind = async (uid: string, studentId: string) => {
+    if(!confirm("確定要解除該學生的 Google 帳號綁定嗎？\n解除後該帳號需重新綁定才能登入。")) return;
+    try {
+      await updateDoc(doc(db, "users", uid), { seat_number: null });
+      await updateDoc(doc(db, "students", studentId), { photo_url: null });
+      await fetchAdminData();
+      alert("✅ 解綁成功！");
+    } catch(e) { alert("解綁失敗"); }
+  };
+
+  const handleManualBind = async (s: any) => {
+    const uid = prompt(`請輸入要綁定至 ${s.seat_number} 號的 Google UID:`);
+    if (!uid || !uid.trim()) return;
+    try {
+      await setDoc(doc(db, "users", uid.trim()), { role: "student", seat_number: Number(s.seat_number) }, { merge: true });
+      await fetchAdminData();
+      alert("✅ 手動綁定成功！");
+    } catch(e) { alert("綁定失敗"); }
+  };
+
+  // --- 神器 2：刪除單筆觀看紀錄 ---
+  const handleDeleteLog = async (logId: string, solutionId: string) => {
+    if(!confirm("確定刪除這筆觀看紀錄？這將會同步扣除該解答的觀看次數。")) return;
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "view_logs", logId));
+      batch.update(doc(db, "solutions", solutionId), { view_count: increment(-1) });
+      await batch.commit();
+      await fetchAdminData();
+    } catch(e) { alert("刪除紀錄失敗"); }
+  };
+
+  // --- 神器 3：強制校正所有觀看數據 ---
+  const handleDataRepair = async () => {
+    if (!confirm("確定強制校正所有解答的觀看次數？\n系統會掃描所有有效觀看紀錄並重新計算。")) return;
+    setLoading(true);
+    try {
+      const logSnap = await getDocs(collection(db, "view_logs"));
+      const batch = writeBatch(db);
+      const countsMap: { [key: string]: number } = {};
+      solutions.forEach(s => countsMap[s.id] = 0);
+      logSnap.docs.forEach(d => { 
+        const sid = d.data().solution_id;
+        if (countsMap[sid] !== undefined) countsMap[sid]++; 
+      });
+      solutions.forEach(s => batch.update(doc(db, "solutions", s.id), { view_count: countsMap[s.id] }));
+      await batch.commit(); 
+      await fetchAdminData(); 
+      alert("✅ 數據校正完成！");
+    } catch(e) { alert("校正失敗"); }
+    setLoading(false);
+  };
+
+  // --- 其他輔助功能 ---
   const handlePublishUpdate = async () => {
     if (!systemVersion.trim() || !systemNotes.trim()) return alert("請填寫版本號與更新內容！");
-    try {
-      await setDoc(doc(db, "settings", "changelog"), { version: systemVersion.trim(), notes: systemNotes.trim(), updated_at: serverTimestamp() });
-      alert("✅ 更新日誌已發佈！");
-    } catch(e) { alert("發佈失敗"); }
+    try { await setDoc(doc(db, "settings", "changelog"), { version: systemVersion.trim(), notes: systemNotes.trim(), updated_at: serverTimestamp() }); alert("✅ 更新日誌已發佈！"); } catch(e) { alert("發佈失敗"); }
   };
 
   const fetchDriveFiles = async () => {
@@ -164,23 +218,17 @@ export default function AdminPage() {
 
   const handleAddStudent = async () => {
     if (!newSeat || !newStudentName) return;
-    try { await setDoc(doc(db, "students", newSeat), { name: newStudentName, seat_number: Number(newSeat), bound_uid: null, photo_url: null }); setNewSeat(""); setNewStudentName(""); fetchAdminData(); } catch (e) { alert("建檔失敗"); }
+    try { await setDoc(doc(db, "students", newSeat), { name: newStudentName, seat_number: Number(newSeat), photo_url: null }); setNewSeat(""); setNewStudentName(""); fetchAdminData(); } catch (e) { alert("建檔失敗"); }
   };
   const handleUpdateStudent = async () => {
     if (!editName.trim() || !editingStudent) return;
-    try { await updateDoc(doc(db, "students", editingStudent.id), { name: editName.trim() }); if (editingStudent.bound_uid) await updateDoc(doc(db, "users", editingStudent.bound_uid), { name: editName.trim() }); await fetchAdminData(); setEditingStudent(null); alert("✅ 更新成功"); } catch (e) { alert("更新失敗"); }
-  };
-
-  const handleDataRepair = async () => {
-    if (!confirm("確定校正統計次數？")) return;
-    setLoading(true);
-    const logSnap = await getDocs(collection(db, "view_logs"));
-    const batch = writeBatch(db);
-    const countsMap: { [key: string]: number } = {};
-    solutions.forEach(s => countsMap[s.id] = 0);
-    logSnap.docs.forEach(d => { if (countsMap[d.data().solution_id] !== undefined) countsMap[d.data().solution_id]++; });
-    solutions.forEach(s => batch.update(doc(db, "solutions", s.id), { view_count: countsMap[s.id] }));
-    await batch.commit(); await fetchAdminData(); setLoading(false);
+    try { 
+      await updateDoc(doc(db, "students", editingStudent.id), { name: editName.trim() }); 
+      // 同步更新已綁定的 users 名字
+      const boundUser = systemUsers.find(u => Number(u.seat_number) === Number(editingStudent.seat_number));
+      if (boundUser) await updateDoc(doc(db, "users", boundUser.id), { name: editName.trim() }); 
+      await fetchAdminData(); setEditingStudent(null); alert("✅ 更新成功"); 
+    } catch (e) { alert("更新失敗"); }
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }} className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full shadow-lg" /></div>;
@@ -189,7 +237,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950/80 p-4 md:p-8 text-slate-800 dark:text-slate-100 transition-colors duration-500 pb-24">
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
         
-        <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl">
+        <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white/50 dark:border-slate-800 rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl">
           <div className="flex items-center gap-4"><div className="w-10 h-10 bg-teal-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg">T</div><h1 className="text-xl font-black italic tracking-tighter hidden sm:block">Admin Panel</h1></div>
           <div className="flex items-center gap-3">
             {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-10 h-10 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}</button>}
@@ -199,7 +247,7 @@ export default function AdminPage() {
 
         <div className="flex justify-start sm:justify-center gap-2 bg-white/70 dark:bg-slate-900/60 p-2 rounded-full shadow-lg border border-white/50 dark:border-slate-700/50 sticky top-4 z-40 transition-colors overflow-x-auto no-scrollbar">
           {[
-            {id:"solutions",label:"解答",icon:<Book size={16}/>,color:"bg-teal-600"},
+            {id:"solutions",label:"解答庫",icon:<Book size={16}/>,color:"bg-teal-600"},
             {id:"students",label:"學生系統",icon:<Users size={16}/>,color:"bg-blue-500"},
             {id:"reports",label:"數據",icon:<BarChart3 size={16}/>,color:"bg-orange-500"}
           ].map(t => (
@@ -210,6 +258,7 @@ export default function AdminPage() {
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}>
             
+            {/* === 解答 Tab === */}
             {activeTab === "solutions" && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 h-fit transition-colors">
@@ -248,6 +297,7 @@ export default function AdminPage() {
               </div>
             )}
 
+            {/* === 學生系統 Tab === */}
             {activeTab === "students" && (
               <div className="flex flex-col gap-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -264,30 +314,128 @@ export default function AdminPage() {
                     <div className="flex flex-col gap-2"><input value={systemVersion} onChange={e => setSystemVersion(e.target.value)} placeholder="版本號 (例: v2.0.0)" className="rounded-xl px-4 py-2 font-bold text-xs outline-none" /><textarea value={systemNotes} onChange={e => setSystemNotes(e.target.value)} placeholder="輸入更新亮點..." rows={2} className="rounded-xl px-4 py-2 font-bold text-xs outline-none resize-none" /><button onClick={handlePublishUpdate} className="bg-teal-600 text-white w-full py-2 rounded-full font-black text-xs mt-1">推播至學生端</button></div>
                   </div>
                 </div>
+                
+                {/* 學生卡片區域 (🚀 解綁按鈕實作) */}
                 <div className="bg-white/70 dark:bg-slate-900/50 p-12 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">{students.map(s => (
-                    <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center border-2 relative transition-all ${maintenance.active && maintenance.testers.includes(Number(s.seat_number)) ? 'border-orange-400' : 'border-transparent'}`}>
-                      <button onClick={() => { setEditingStudent(s); setEditName(s.name); }} className="absolute top-5 right-5 text-slate-300 hover:text-blue-500"><Edit2 size={16} /></button>
-                      <div className="relative mb-6"><div className="w-20 h-20 rounded-full border-4 border-white shadow-xl overflow-hidden"><img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-full h-full object-cover" /></div><div className="absolute -bottom-1 -right-1 bg-blue-500 text-white text-[12px] font-black w-8 h-8 flex items-center justify-center rounded-full border-4 border-white shadow-md">{s.seat_number}</div></div>
-                      <div className="font-black text-xl mb-6">{s.name}</div>
-                      <div className="flex flex-col w-full gap-2 border-t pt-6"><button onClick={() => setSelectedStudent(s)} className="bg-slate-50 text-slate-600 text-xs font-black py-3 rounded-full hover:bg-slate-200 transition-all"><Eye size={16} className="inline mr-2"/> 觀看紀錄</button></div>
-                    </div>
-                  ))}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                    {students.map(s => {
+                      // 尋找此座號是否有被 users 綁定
+                      const boundUser = systemUsers.find(u => Number(u.seat_number) === Number(s.seat_number) && u.role === "student");
+
+                      return (
+                        <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center border-2 relative transition-all ${maintenance.active && maintenance.testers.includes(Number(s.seat_number)) ? 'border-orange-400' : 'border-transparent'}`}>
+                          <button onClick={() => { setEditingStudent(s); setEditName(s.name); }} className="absolute top-5 right-5 text-slate-300 hover:text-blue-500"><Edit2 size={16} /></button>
+                          
+                          <div className="relative mb-6">
+                            <div className="w-20 h-20 rounded-full border-4 border-white shadow-xl overflow-hidden bg-slate-100 flex items-center justify-center">
+                              <img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-full h-full object-cover" />
+                            </div>
+                            <div className="absolute -bottom-1 -right-1 bg-blue-500 text-white text-[12px] font-black w-8 h-8 flex items-center justify-center rounded-full border-4 border-white shadow-md">{s.seat_number}</div>
+                          </div>
+                          
+                          <div className="font-black text-xl mb-6">{s.name}</div>
+                          
+                          <div className="flex flex-col w-full gap-2 border-t pt-6">
+                            <button onClick={() => setSelectedStudent(s)} className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-black py-3 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm">
+                              <Eye size={14} /> 觀看紀錄
+                            </button>
+                            
+                            {/* 🚀 神器 1：Google 帳號管理 */}
+                            {boundUser ? (
+                              <button onClick={() => handleUnbind(boundUser.id, s.id)} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-[10px] font-black py-3 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm flex items-center justify-center gap-2">
+                                <Link2Off size={14}/> 解除 Google 綁定
+                              </button>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                <div className="text-[10px] text-slate-400 font-bold py-1 text-center bg-slate-50 dark:bg-slate-800 rounded-full w-full">尚未登入綁定</div>
+                                <button onClick={() => handleManualBind(s)} className="text-teal-600 border border-teal-100 text-[10px] font-black py-1.5 rounded-full hover:bg-teal-50 transition-all flex items-center justify-center gap-1"><Link2 size={12}/> 手動指定 UID</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
 
+            {/* === 報表 Tab (🚀 強制校正) === */}
             {activeTab === "reports" && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border h-[450px] flex flex-col items-center"><div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 解答熱度</h2></div><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={subjects.map(sub => ({ name: sub.name, value: solutions.filter(s => s.subject === sub.name).reduce((sum, s) => sum + (s.view_count || 0), 0) })).filter(d => d.value > 0)} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" paddingAngle={5}>{COLORS.map((c, i) => <Cell key={i} fill={c} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div>
-                <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border overflow-y-auto max-h-[450px] custom-scrollbar"><h2 className="text-lg font-black mb-8 flex items-center gap-3"><Trophy size={22} className="text-yellow-500" /> 熱門資源</h2>{[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,10).map((item, i) => (<div key={item.id} className="flex justify-between items-center p-5 bg-white/60 dark:bg-slate-800/60 rounded-[2rem] mb-4 shadow-sm border border-white/50"><span className="font-black text-sm flex items-center"><span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-orange-300' : 'bg-slate-200 text-slate-500'}`}>{i+1}</span>{item.title}</span><span className="text-slate-500 font-black px-4 py-1 rounded-full text-xs">{item.view_count || 0}</span></div>))}</div>
+                <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border h-[450px] flex flex-col items-center">
+                  <div className="flex justify-between w-full mb-6 items-center">
+                    <h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 解答熱度</h2>
+                    <div className="flex gap-2">
+                      <button onClick={fetchAdminData} className="bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-full text-[10px] font-bold shadow-sm hover:bg-slate-200 transition-all flex items-center gap-1"><RefreshCw size={12}/> 刷新</button>
+                      {/* 🚀 神器 3：強制校正按鈕 */}
+                      <button onClick={handleDataRepair} className="bg-red-50 dark:bg-red-500/10 text-red-500 px-4 py-2 rounded-full text-[10px] font-bold border border-red-100 dark:border-red-500/30 shadow-sm hover:bg-red-500 hover:text-white transition-all active:scale-95 flex items-center gap-1"><AlertTriangle size={12}/> 強制校正數據</button>
+                    </div>
+                  </div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={subjects.map(sub => ({ name: sub.name, value: solutions.filter(s => s.subject === sub.name).reduce((sum, s) => sum + (s.view_count || 0), 0) })).filter(d => d.value > 0)} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" paddingAngle={5}>
+                        {COLORS.map((c, i) => <Cell key={i} fill={c} />)}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border overflow-y-auto max-h-[450px] custom-scrollbar">
+                  <h2 className="text-lg font-black mb-8 flex items-center gap-3"><Trophy size={22} className="text-yellow-500" /> 熱門資源</h2>
+                  {[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,10).map((item, i) => (
+                    <div key={item.id} className="flex justify-between items-center p-5 bg-white/60 dark:bg-slate-800/60 rounded-[2rem] mb-4 shadow-sm border border-white/50">
+                      <span className="font-black text-sm flex items-center"><span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-orange-300' : 'bg-slate-200 text-slate-500'}`}>{i+1}</span>{item.title}</span>
+                      <span className="text-slate-500 font-black px-4 py-1 rounded-full text-xs">{item.view_count || 0}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* 所有的 Modals (編輯姓名、維護模式、清理檔案等) */}
+      {/* 🚀 觀看紀錄 Modal (含神器 2：刪除單筆紀錄) */}
+      <AnimatePresence>
+        {selectedStudent && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/80 backdrop-blur-md" onClick={() => setSelectedStudent(null)} />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[3.5rem] p-8 md:p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative z-10 border">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b dark:border-slate-800">
+                <div className="flex items-center gap-4">
+                  <img src={selectedStudent.photo_url ? `${selectedStudent.photo_url}?t=${lastFetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-md" referrerPolicy="no-referrer" />
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3>
+                </div>
+                <button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500 hover:bg-slate-200 transition-colors">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
+                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).map(log => {
+                  const s = solutions.find(sol => sol.id === log.solution_id);
+                  return (
+                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border shadow-sm hover:bg-white dark:hover:bg-slate-800 transition-colors">
+                      <div className="flex flex-col">
+                        <span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除解答"}</span>
+                        <span className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span>
+                      </div>
+                      {/* 🚀 神器 2：紀錄刪除按鈕 */}
+                      <button onClick={() => handleDeleteLog(log.id, log.solution_id)} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-[10px] px-4 py-2 rounded-full font-black opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white shadow-sm">
+                        刪除此紀錄
+                      </button>
+                    </div>
+                  );
+                })}
+                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).length === 0 && (
+                  <div className="py-20 text-center text-slate-400 font-bold">目前無觀看紀錄</div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 其他 Modal 保持原樣 (編輯姓名, 清理雲端, 維護模式設定) */}
       <AnimatePresence>
         {editingStudent && (
           <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
@@ -310,39 +458,6 @@ export default function AdminPage() {
       <AnimatePresence>
         {showTesterModal && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowTesterModal(false)} /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border"><h3 className="text-xl font-black mb-4 flex items-center gap-2 text-orange-500 tracking-tight italic">< ShieldCheck /> 設定維護測試人員</h3><div className="grid grid-cols-4 sm:grid-cols-6 gap-3 mb-8 max-h-[300px] overflow-y-auto custom-scrollbar p-2">{students.map(s => <button key={s.seat_number} onClick={() => setSelectedTesters(prev => prev.includes(Number(s.seat_number)) ? prev.filter(n => n !== Number(s.seat_number)) : [...prev, Number(s.seat_number)])} className={`h-12 rounded-2xl font-black text-sm border-2 transition-all ${selectedTesters.includes(Number(s.seat_number)) ? 'bg-orange-500 text-white border-orange-500' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-transparent hover:border-slate-300'}`}>{s.seat_number}</button>)}</div><div className="flex gap-4"><button onClick={() => setShowTesterModal(false)} className="flex-1 py-4 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 transition-colors">取消</button><button onClick={() => setDoc(doc(db,"settings","maintenance"),{active:true,testers:selectedTesters}).then(() => { fetchSystemSettings(); setShowTesterModal(false); })} className="flex-1 py-4 rounded-full font-bold bg-orange-500 text-white">啟動維護</button></div></motion.div></div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {viewingPreviewUrl && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-0 md:p-6 overflow-hidden"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-lg" onClick={() => setViewingPreviewUrl(null)} /><motion.div initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} className="bg-white dark:bg-slate-900 rounded-t-[3rem] md:rounded-[3.5rem] w-full max-w-5xl h-[95vh] flex flex-col relative z-10 overflow-hidden shadow-2xl border transition-colors"><div className="p-8 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20 transition-colors"><div className="flex items-center gap-3"><div className="p-2 bg-teal-50 dark:bg-teal-500/10 rounded-xl"><BookOpen size={20} className="text-teal-600" /></div><span className="font-black text-lg italic tracking-tight">管理員預覽</span></div><button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 hover:text-white rounded-full font-bold flex items-center justify-center">✕</button></div><iframe src={viewingPreviewUrl} className="flex-1 w-full border-none" /></motion.div></div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {selectedStudent && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/80 backdrop-blur-md" onClick={() => setSelectedStudent(null)} />
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[3.5rem] p-8 md:p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative z-10 border">
-              <div className="flex justify-between items-center mb-6 pb-4 border-b dark:border-slate-800">
-                <div className="flex items-center gap-4">
-                  <img src={selectedStudent.photo_url ? `${selectedStudent.photo_url}?t=${lastFetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-md" referrerPolicy="no-referrer" />
-                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3>
-                </div>
-                <button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500">✕</button>
-              </div>
-              <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
-                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).map(log => {
-                  const s = solutions.find(sol => sol.id === log.solution_id);
-                  return (
-                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border shadow-sm">
-                      <div className="flex flex-col"><span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除解答"}</span><span className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span></div>
-                    </div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </div>
         )}
       </AnimatePresence>
 
