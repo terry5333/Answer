@@ -166,22 +166,28 @@ export default function LoginPage() {
     </div>
   );
 }
-{/* 🚀 V2 修正：首頁用途說明與隱私權連結 */}
-          <div className="mt-10 pt-6 border-t border-slate-100 text-center space-y-4">
-            <div className="px-4">
-              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2">應用程式用途說明</h3>
-              <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
-                TerryEdu 是一款專為校內國二學生打造的個人化學習平台。我們透過 Google OAuth 驗證您的身分，以便提供專屬的解答共享、學習進度追蹤及筆記管理服務，確保教學資源的安全與精準投放。
+{/* 🚀 V2 審查修復：首頁用途說明與隱私權連結 */}
+          <div className="mt-12 pt-8 border-t border-slate-100 dark:border-slate-800 text-center space-y-5">
+            <div className="px-2">
+              <h3 className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.3em] mb-3">
+                應用程式用途說明 (App Purpose)
+              </h3>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed font-bold">
+                TerryEdu 是專為校內國二學生設計的個人化學習平台。我們透過 Google OAuth 驗證您的身分，以確保教學資源僅限授權學生存取，並提供解答共享、進度追蹤及筆記管理功能。
               </p>
             </div>
             
-            <div className="flex justify-center gap-6">
-              <a href="/privacy" className="text-[10px] font-bold text-teal-600 hover:text-teal-500 underline underline-offset-4 transition-colors">
+            {/* 🔗 關鍵：確保連結在首頁清晰可見 */}
+            <div className="flex justify-center items-center gap-5">
+              <a 
+                href="/privacy" 
+                className="text-[11px] font-black text-teal-600 dark:text-teal-400 hover:text-teal-500 underline underline-offset-4 decoration-2 transition-all"
+              >
                 隱私權政策 (Privacy Policy)
               </a>
-              <span className="text-[10px] text-slate-300">|</span>
-              <span className="text-[10px] font-bold text-slate-400">
-                © 2026 TerryEdu
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                © 2026 TerryEdu Project
               </span>
             </div>
           </div>
