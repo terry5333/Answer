@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, Users, BarChart3, Book, AlertTriangle, Eye, Sun, Moon, BookOpen, ShieldCheck, Search, Trash2, CheckCircle, Trophy, PlusCircle, Edit2, Link as LinkIcon, Sparkles, PenTool, BrainCircuit } from "lucide-react";
+import { RefreshCw, Users, BarChart3, Book, AlertTriangle, Eye, Sun, Moon, BookOpen, ShieldCheck, Search, Trash2, CheckCircle, Trophy, PlusCircle, Edit2, Link as LinkIcon, Sparkles } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#60a5fa'];
@@ -17,7 +17,6 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState("solutions");
   const [subjects, setSubjects] = useState<any[]>([]);
   const [solutions, setSolutions] = useState<any[]>([]);
-  const [notes, setNotes] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [viewLogs, setViewLogs] = useState<any[]>([]);
   
@@ -71,13 +70,11 @@ export default function AdminPage() {
     try {
       const subSnap = await getDocs(collection(db, "subjects"));
       const solSnap = await getDocs(query(collection(db, "solutions"), orderBy("created_at", "desc")));
-      const notesSnap = await getDocs(query(collection(db, "notes"), orderBy("created_at", "desc")));
       const stuSnap = await getDocs(query(collection(db, "students"), orderBy("seat_number", "asc")));
       const logSnap = await getDocs(query(collection(db, "view_logs"), orderBy("viewed_at", "desc")));
       
       setSubjects(subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setNotes(notesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setStudents(stuSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setViewLogs(logSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLastFetchTime(Date.now());
@@ -107,75 +104,104 @@ export default function AdminPage() {
       const res = await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "LIST_FILES" }) });
       const data = await res.json();
       if (data.status === 'success') {
-        const boundIds = [...solutions, ...notes].map(item => item.drive_file_id || (item.file_url?.match(/[-\w]{25,35}/)?.[0])).filter(Boolean);
+        const boundIds = solutions.map(item => item.drive_file_id || (item.file_url?.match(/[-\w]{25,35}/)?.[0])).filter(Boolean);
         setAvailableFiles(data.files.filter((f: any) => !boundIds.includes(f.id)));
       }
     } catch (e) { alert("讀取雲端檔案失敗"); }
     setIsFetchingDrive(false);
   };
 
-  // 🚀 核心綁定邏輯：支援 slug 與 note_type
-  const handleBindResource = async (e: React.FormEvent<HTMLFormElement>, type: "solutions" | "notes") => {
+  const handleBindSolution = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const subject = formData.get('subject') as string;
     const title = formData.get('title') as string;
     const fileId = formData.get('fileId') as string;
-    const chapter = formData.get('chapter') as string || "";
-    const noteType = formData.get('note_type') as string || "mindmap";
-    const slug = formData.get('slug') as string || "";
 
     const selectedFile = availableFiles.find(f => f.id === fileId);
     if (!selectedFile) return alert("請先選擇要綁定的雲端檔案！");
 
     setIsUploading(true);
     try {
-      const payload: any = { subject, title, file_url: selectedFile.url, drive_file_id: selectedFile.id, view_count: 0, created_at: serverTimestamp() };
-      
-      if (type === "notes") {
-        payload.chapter = chapter;
-        payload.note_type = noteType;
-        if (slug) payload.slug = slug.trim().toLowerCase().replace(/\s+/g, '-');
-      }
-
-      await addDoc(collection(db, type), payload);
+      await addDoc(collection(db, "solutions"), { subject, title, file_url: selectedFile.url, drive_file_id: selectedFile.id, view_count: 0, created_at: serverTimestamp() });
       setAvailableFiles(prev => prev.filter(f => f.id !== fileId));
       await fetchAdminData();
       (e.target as HTMLFormElement).reset();
-      alert(`✅ ${type === "solutions" ? "解答" : "筆記"}綁定成功！`);
+      alert("✅ 解答綁定成功！");
     } catch (err: any) { alert(`❌ 綁定失敗: \n${err.message}`); } finally { setIsUploading(false); }
   };
 
-  const handleFullDelete = async (item: any, type: "solutions" | "notes") => {
-    if (!confirm(`確定徹底刪除「${item.title}」並移除雲端檔案？`)) return;
+  const handleSyncCheck = async () => {
+    setIsSyncing(true);
+    setShowSyncModal(true);
     try {
-      if (item.file_url) await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "DELETE", fileUrl: item.file_url }) });
-      await deleteDoc(doc(db, type, item.id));
+      const res = await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "LIST_FILES" }) });
+      const data = await res.json();
+      if (data.status === 'success') {
+        const boundIds = solutions.map(item => item.drive_file_id || (item.file_url?.match(/[-\w]{25,35}/)?.[0])).filter(Boolean);
+        setOrphanedFiles(data.files.filter((cf: any) => !boundIds.includes(cf.id)));
+      }
+    } catch (e) { alert("比對發生錯誤"); } finally { setIsSyncing(false); }
+  };
+
+  const handleSyncDelete = async (fileUrl: string) => {
+    if (!confirm("確定要從雲端永久刪除此檔案嗎？")) return;
+    try {
+      await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "DELETE", fileUrl }) });
+      setOrphanedFiles(prev => prev.filter(f => f.url !== fileUrl));
+      setAvailableFiles(prev => prev.filter(f => f.url !== fileUrl));
+    } catch (e) { alert("刪除失敗"); }
+  };
+
+  const handleFullDelete = async (sol: any) => {
+    if (!confirm(`確定徹底刪除「${sol.title}」並移除雲端檔案？`)) return;
+    try {
+      if (sol.file_url) await fetch('/api/upload', { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "DELETE", fileUrl: sol.file_url }) });
+      await deleteDoc(doc(db, "solutions", sol.id));
       fetchAdminData();
     } catch (error) { alert("刪除失敗"); }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }} className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full shadow-lg" /></div>;
+  const handleAddStudent = async () => {
+    if (!newSeat || !newStudentName) return;
+    try { await setDoc(doc(db, "students", newSeat), { name: newStudentName, seat_number: Number(newSeat), bound_uid: null, photo_url: null }); setNewSeat(""); setNewStudentName(""); fetchAdminData(); } catch (e) { alert("建檔失敗"); }
+  };
+  const handleUpdateStudent = async () => {
+    if (!editName.trim() || !editingStudent) return;
+    try { await updateDoc(doc(db, "students", editingStudent.id), { name: editName.trim() }); if (editingStudent.bound_uid) await updateDoc(doc(db, "users", editingStudent.bound_uid), { name: editName.trim() }); await fetchAdminData(); setEditingStudent(null); alert("✅ 更新成功"); } catch (e) { alert("更新失敗"); }
+  };
+
+  const handleDataRepair = async () => {
+    if (!confirm("確定校正統計次數？")) return;
+    setLoading(true);
+    const logSnap = await getDocs(collection(db, "view_logs"));
+    const batch = writeBatch(db);
+    const countsMap: { [key: string]: number } = {};
+    solutions.forEach(s => countsMap[s.id] = 0);
+    logSnap.docs.forEach(d => { if (countsMap[d.data().solution_id] !== undefined) countsMap[d.data().solution_id]++; });
+    solutions.forEach(s => batch.update(doc(db, "solutions", s.id), { view_count: countsMap[s.id] }));
+    await batch.commit(); await fetchAdminData(); setLoading(false);
+  };
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }} className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full shadow-lg" /></div>;
 
   return (
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950/80 p-4 md:p-8 text-slate-800 dark:text-slate-100 transition-colors duration-500 pb-24">
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
         
-        {/* Header */}
         <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2.5rem] p-6 px-10 flex justify-between items-center shadow-xl">
-          <div className="flex items-center gap-4"><div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg">T</div><h1 className="text-xl font-black italic tracking-tighter hidden sm:block">TerryEdu Admin</h1></div>
+          <div className="flex items-center gap-4"><div className="w-10 h-10 bg-teal-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg">T</div><h1 className="text-xl font-black italic tracking-tighter hidden sm:block">Admin Panel</h1></div>
           <div className="flex items-center gap-3">
             {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-10 h-10 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}</button>}
             <button onClick={() => { signOut(auth); router.push("/login"); }} className="bg-slate-200 dark:bg-slate-800 px-6 py-2.5 rounded-full font-bold text-sm shadow-sm transition-all hover:bg-slate-300">登出</button>
           </div>
         </div>
 
-        {/* 導航 */}
         <div className="flex justify-start sm:justify-center gap-2 bg-white/70 dark:bg-slate-900/60 p-2 rounded-full shadow-lg border border-white/50 dark:border-slate-700/50 sticky top-4 z-40 transition-colors overflow-x-auto no-scrollbar">
           {[
             {id:"solutions",label:"解答",icon:<Book size={16}/>,color:"bg-teal-600"},
-            {id:"notes",label:"筆記管理",icon:<PenTool size={16}/>,color:"bg-indigo-600"},
-            {id:"students",label:"學生系統",icon:<Users size={16}/>,color:"bg-blue-500"}
+            {id:"students",label:"學生系統",icon:<Users size={16}/>,color:"bg-blue-500"},
+            {id:"reports",label:"數據",icon:<BarChart3 size={16}/>,color:"bg-orange-500"}
           ].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2 px-6 py-3 rounded-full font-bold transition-all whitespace-nowrap ${activeTab === t.id ? `text-white ${t.color}` : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"}`}>{t.icon} {t.label}</button>
           ))}
@@ -184,20 +210,21 @@ export default function AdminPage() {
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}>
             
-            {/* 略縮：解答管理 Tab (與前版相同) */}
             {activeTab === "solutions" && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* 科目設定區塊 */}
                 <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 h-fit transition-colors">
                   <h2 className="text-lg font-black mb-6 flex items-center gap-2"><div className="w-1.5 h-5 bg-teal-500 rounded-full" /> 科目設定</h2>
                   <div className="flex gap-2 mb-6"><input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="新科目..." className="flex-1 rounded-full px-5 py-3 bg-white dark:bg-slate-800 outline-none text-sm shadow-inner transition-colors" /><button onClick={async () => { if(newSubject){ await addDoc(collection(db,"subjects"),{name:newSubject}); setNewSubject(""); await fetchAdminData(); }}} className="bg-teal-600 text-white w-12 h-12 rounded-full font-bold shadow-lg transition-all active:scale-95">+</button></div>
                   <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">{subjects.map(s => <div key={s.id} className="flex justify-between bg-white/80 dark:bg-slate-800/80 px-6 py-3 rounded-2xl font-bold border border-gray-50 dark:border-slate-700 transition-colors">{s.name}<button onClick={() => deleteDoc(doc(db,"subjects",s.id)).then(fetchAdminData)} className="text-red-300 hover:text-red-500 transition-colors">✕</button></div>)}</div>
                 </div>
-                {/* 綁定區塊 */}
+                
                 <div className="lg:col-span-2 flex flex-col gap-6">
                   <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
-                    <h2 className="text-lg font-black flex items-center gap-2 text-teal-600 dark:text-teal-400 mb-6"><Book size={20}/> 綁定雲端解答</h2>
-                    <form onSubmit={(e) => handleBindResource(e, "solutions")} className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-lg font-black flex items-center gap-2 text-teal-600 dark:text-teal-400"><Book size={20}/> 綁定雲端解答</h2>
+                      <button onClick={handleSyncCheck} className="flex items-center gap-2 bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 px-5 py-2.5 rounded-full text-xs font-black shadow-sm hover:bg-teal-600 hover:text-white transition-all active:scale-95"><Search size={14}/> 清理雲端</button>
+                    </div>
+                    <form onSubmit={handleBindSolution} className="flex flex-col gap-4">
                       <div className="flex flex-col sm:flex-row gap-4 items-center w-full">
                         <select name="subject" required className="w-full sm:w-1/3 bg-white dark:bg-slate-800 rounded-full px-5 py-3.5 font-bold text-sm outline-none"><option value="">選擇科目</option>{subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
                         <input name="title" required placeholder="解答名稱 (例：段考二詳解)" className="flex-1 w-full bg-white dark:bg-slate-800 rounded-full px-6 py-3.5 font-bold text-sm outline-none" />
@@ -215,72 +242,110 @@ export default function AdminPage() {
                   </div>
                   <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
                     <h2 className="text-lg font-black mb-6">📚 解答庫清單</h2>
-                    <div className="space-y-3">{solutions.map(sol => <div key={sol.id} className="flex justify-between items-center bg-white/80 dark:bg-slate-800/80 px-6 py-4 rounded-[2rem] shadow-sm border border-white dark:border-slate-700/50 group hover:bg-white/95 transition-all"><span className="font-bold text-sm"><span className="text-teal-500 mr-2 text-[10px] bg-teal-50 dark:bg-teal-500/10 px-2 py-1 rounded-full">[{sol.subject}]</span>{sol.title}</span><div className="flex gap-2"><button onClick={() => setViewingPreviewUrl(sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : `https://drive.google.com/file/d/${sol.drive_file_id}/preview`)} className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-all">預覽</button><button onClick={() => handleFullDelete(sol, "solutions")} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white">刪除</button></div></div>)}</div>
+                    <div className="space-y-3">{solutions.map(sol => <div key={sol.id} className="flex justify-between items-center bg-white/80 dark:bg-slate-800/80 px-6 py-4 rounded-[2rem] shadow-sm border border-white dark:border-slate-700/50 group hover:bg-white/95 transition-all"><span className="font-bold text-sm"><span className="text-teal-500 mr-2 text-[10px] bg-teal-50 dark:bg-teal-500/10 px-2 py-1 rounded-full">[{sol.subject}]</span>{sol.title}</span><div className="flex gap-2"><button onClick={() => setViewingPreviewUrl(sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : `https://drive.google.com/file/d/${sol.drive_file_id}/preview`)} className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-all">預覽</button><button onClick={() => handleFullDelete(sol)} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white">刪除</button></div></div>)}</div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 🚀 === 筆記管理 Tab (重點更新：加入類別與短網址) === */}
-            {activeTab === "notes" && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 h-fit transition-colors">
-                  <div className="bg-indigo-50/50 dark:bg-indigo-900/20 p-5 rounded-3xl border border-indigo-100 dark:border-indigo-800/50">
-                    <h2 className="text-sm font-black text-indigo-600 dark:text-indigo-400 flex items-center gap-2 mb-2"><PenTool size={16}/> 發佈手繪筆記</h2>
-                    <p className="text-xs text-indigo-700/70 dark:text-indigo-300/70 font-bold leading-relaxed">請將 iPad 筆記輸出為 PDF 後丟入 Drive 綁定。您可以設定專屬短網址 (Slug) 方便在班群分享！</p>
+            {activeTab === "students" && (
+              <div className="flex flex-col gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white flex flex-col justify-center">
+                    <div className="flex justify-between items-center mb-4"><h2 className="font-black text-sm text-blue-500 flex items-center gap-2"><PlusCircle size={18}/> 新增學生</h2><button onClick={fetchAdminData} className="text-[10px] font-bold text-blue-500"><RefreshCw size={12}/></button></div>
+                    <div className="flex gap-2"><input type="number" value={newSeat} onChange={e => setNewSeat(e.target.value)} placeholder="座號" className="w-20 rounded-full px-4 py-3 font-bold text-xs outline-none" /><input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="姓名" className="flex-1 rounded-full px-4 py-3 font-bold text-xs outline-none" /><button onClick={handleAddStudent} className="bg-blue-500 text-white px-5 py-3 rounded-full font-black text-xs">新增</button></div>
+                  </div>
+                  <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white flex flex-col justify-center gap-4">
+                    <div className="flex items-center gap-4"><div className={`p-3 rounded-2xl ${maintenance.active ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}><ShieldCheck size={24} /></div><div><h3 className="font-black text-sm italic">維護系統狀態</h3><p className="text-[10px] text-slate-500">{maintenance.active ? `維護中` : '正常運作'}</p></div></div>
+                    <button onClick={() => { if(maintenance.active) setDoc(doc(db,"settings","maintenance"),{active:false,testers:[]}).then(() => fetchSystemSettings()); else setShowTesterModal(true); }} className={`w-full py-3 rounded-full font-black text-xs ${maintenance.active ? 'bg-slate-200 text-slate-600' : 'bg-orange-500 text-white'}`}>{maintenance.active ? '關閉維護開放登入' : '啟動維護模式'}</button>
+                  </div>
+                  <div className="bg-white/70 dark:bg-slate-900/50 p-6 rounded-[2.5rem] shadow-xl border border-white flex flex-col justify-center lg:col-span-3 xl:col-span-1">
+                    <h2 className="font-black text-sm mb-4 flex items-center gap-2 text-teal-600"><Sparkles size={18}/> 系統更新公告</h2>
+                    <div className="flex flex-col gap-2"><input value={systemVersion} onChange={e => setSystemVersion(e.target.value)} placeholder="版本號 (例: v2.0.0)" className="rounded-xl px-4 py-2 font-bold text-xs outline-none" /><textarea value={systemNotes} onChange={e => setSystemNotes(e.target.value)} placeholder="輸入更新亮點..." rows={2} className="rounded-xl px-4 py-2 font-bold text-xs outline-none resize-none" /><button onClick={handlePublishUpdate} className="bg-teal-600 text-white w-full py-2 rounded-full font-black text-xs mt-1">推播至學生端</button></div>
                   </div>
                 </div>
-                
-                <div className="lg:col-span-2 flex flex-col gap-6">
-                  <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
-                    <h2 className="text-lg font-black flex items-center gap-2 text-indigo-600 dark:text-indigo-400 mb-6"><LinkIcon size={20}/> 綁定心智圖 / 筆記</h2>
-                    
-                    <form onSubmit={(e) => handleBindResource(e, "notes")} className="flex flex-col gap-4">
-                      {/* 🚀 新增類型與章節 */}
-                      <div className="flex flex-col sm:flex-row gap-4 items-center w-full">
-                        <select name="subject" required className="w-full sm:w-1/4 bg-white dark:bg-slate-800 rounded-full px-5 py-3.5 font-bold text-sm outline-none"><option value="">科目</option>{subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
-                        <select name="note_type" required className="w-full sm:w-1/4 bg-white dark:bg-slate-800 rounded-full px-5 py-3.5 font-bold text-sm outline-none text-indigo-500"><option value="mindmap">🧠 心智圖</option><option value="note">📝 重點筆記</option></select>
-                        <input name="chapter" required placeholder="單元 (例: 3-2)" className="w-full sm:w-1/4 bg-white dark:bg-slate-800 rounded-full px-5 py-3.5 font-bold text-sm outline-none" />
-                        <input name="title" required placeholder="標題重點" className="flex-1 w-full bg-white dark:bg-slate-800 rounded-full px-6 py-3.5 font-bold text-sm outline-none" />
-                      </div>
-
-                      {/* 🚀 新增專屬短網址 */}
-                      <div className="flex flex-col sm:flex-row gap-4 items-center w-full">
-                        <div className="flex items-center w-full sm:w-1/3 bg-white dark:bg-slate-800 rounded-full px-4 py-1 overflow-hidden shadow-inner">
-                          <span className="text-[10px] text-slate-400 font-bold whitespace-nowrap border-r dark:border-slate-700 pr-2 mr-2">/n/</span>
-                          <input name="slug" placeholder="自訂網址 (選填)" className="w-full bg-transparent font-bold text-sm outline-none text-indigo-500 h-10" />
-                        </div>
-                        <div className="flex-1 flex w-full gap-2 items-center">
-                          <select name="fileId" required className="flex-1 bg-white dark:bg-slate-800 rounded-full px-5 py-3.5 font-bold text-sm outline-none">
-                            {availableFiles.length === 0 ? <option value="">無待綁定檔案...</option> : <option value="">選擇上傳的 PDF...</option>}{availableFiles.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                          </select>
-                          <button type="button" onClick={() => fetchDriveFiles()} className="bg-white dark:bg-slate-800 p-3.5 rounded-full text-slate-500 shrink-0"><RefreshCw size={18} className={isFetchingDrive ? "animate-spin text-indigo-500" : ""} /></button>
-                        </div>
-                        <button disabled={isUploading || availableFiles.length === 0} className="w-full sm:w-auto bg-indigo-600 text-white font-black py-3.5 px-10 rounded-full shadow-lg disabled:opacity-50 text-sm active:scale-95 shrink-0">發佈</button>
-                      </div>
-                    </form>
-
-                  </div>
-
-                  <div className="bg-white/70 dark:bg-slate-900/50 p-8 rounded-[3rem] shadow-xl border border-white dark:border-slate-700/50 transition-colors">
-                    <h2 className="text-lg font-black mb-6">📝 筆記展示區</h2>
-                    <div className="space-y-3">{notes.map(note => <div key={note.id} className="flex justify-between items-center bg-white/80 dark:bg-slate-800/80 px-6 py-4 rounded-[2rem] shadow-sm border border-white dark:border-slate-700/50 group hover:bg-white/95 transition-all"><div className="flex items-center gap-3"><span className="text-indigo-500 text-[10px] bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-full font-bold">[{note.subject}] {note.chapter}</span><span className="font-bold text-sm flex items-center gap-2">{note.note_type === 'mindmap' ? '🧠' : '📝'} {note.title} {note.slug && <span className="text-[9px] text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">/n/{note.slug}</span>}</span></div><div className="flex gap-2"><button onClick={() => setViewingPreviewUrl(note.file_url ? note.file_url.replace(/\/view.*/, "/preview") : `https://drive.google.com/file/d/${note.drive_file_id}/preview`)} className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-all">預覽</button><button onClick={() => handleFullDelete(note, "notes")} className="bg-red-50 dark:bg-red-500/10 text-red-500 text-[10px] px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white">刪除</button></div></div>)}</div>
-                  </div>
+                <div className="bg-white/70 dark:bg-slate-900/50 p-12 rounded-[3.5rem] shadow-xl border border-white dark:border-slate-700/50">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">{students.map(s => (
+                    <div key={s.id} className={`bg-white/90 dark:bg-slate-800/90 p-8 rounded-[3rem] flex flex-col items-center border-2 relative transition-all ${maintenance.active && maintenance.testers.includes(Number(s.seat_number)) ? 'border-orange-400' : 'border-transparent'}`}>
+                      <button onClick={() => { setEditingStudent(s); setEditName(s.name); }} className="absolute top-5 right-5 text-slate-300 hover:text-blue-500"><Edit2 size={16} /></button>
+                      <div className="relative mb-6"><div className="w-20 h-20 rounded-full border-4 border-white shadow-xl overflow-hidden"><img src={s.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`} className="w-full h-full object-cover" /></div><div className="absolute -bottom-1 -right-1 bg-blue-500 text-white text-[12px] font-black w-8 h-8 flex items-center justify-center rounded-full border-4 border-white shadow-md">{s.seat_number}</div></div>
+                      <div className="font-black text-xl mb-6">{s.name}</div>
+                      <div className="flex flex-col w-full gap-2 border-t pt-6"><button onClick={() => setSelectedStudent(s)} className="bg-slate-50 text-slate-600 text-xs font-black py-3 rounded-full hover:bg-slate-200 transition-all"><Eye size={16} className="inline mr-2"/> 觀看紀錄</button></div>
+                    </div>
+                  ))}</div>
                 </div>
               </div>
             )}
 
-            {/* 其他 Tabs 略縮... (如 Student, Reports，與上一步完全相同) */}
+            {activeTab === "reports" && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border h-[450px] flex flex-col items-center"><div className="flex justify-between w-full mb-6"><h2 className="text-lg font-black flex items-center gap-2"><BarChart3 size={20}/> 解答熱度</h2></div><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={subjects.map(sub => ({ name: sub.name, value: solutions.filter(s => s.subject === sub.name).reduce((sum, s) => sum + (s.view_count || 0), 0) })).filter(d => d.value > 0)} cx="50%" cy="50%" innerRadius={70} outerRadius={110} dataKey="value" stroke="none" paddingAngle={5}>{COLORS.map((c, i) => <Cell key={i} fill={c} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div>
+                <div className="bg-white/70 dark:bg-slate-900/50 p-10 rounded-[3.5rem] shadow-xl border overflow-y-auto max-h-[450px] custom-scrollbar"><h2 className="text-lg font-black mb-8 flex items-center gap-3"><Trophy size={22} className="text-yellow-500" /> 熱門資源</h2>{[...solutions].sort((a,b) => (b.view_count||0)-(a.view_count||0)).slice(0,10).map((item, i) => (<div key={item.id} className="flex justify-between items-center p-5 bg-white/60 dark:bg-slate-800/60 rounded-[2rem] mb-4 shadow-sm border border-white/50"><span className="font-black text-sm flex items-center"><span className={`w-8 h-8 flex items-center justify-center rounded-xl mr-4 text-xs text-white shadow-md ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-orange-300' : 'bg-slate-200 text-slate-500'}`}>{i+1}</span>{item.title}</span><span className="text-slate-500 font-black px-4 py-1 rounded-full text-xs">{item.view_count || 0}</span></div>))}</div>
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* PDF 預覽 Modal */}
+      {/* 所有的 Modals (編輯姓名、維護模式、清理檔案等) */}
       <AnimatePresence>
-        {viewingPreviewUrl && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-0 md:p-6 overflow-hidden"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-lg" onClick={() => setViewingPreviewUrl(null)} /><motion.div initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} className="bg-white dark:bg-slate-900 rounded-t-[3rem] md:rounded-[3.5rem] w-full max-w-5xl h-[95vh] flex flex-col relative z-10 overflow-hidden shadow-2xl border border-white/20 transition-colors"><div className="p-8 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20 transition-colors"><div className="flex items-center gap-3"><div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl"><BookOpen size={20} className="text-indigo-600" /></div><span className="font-black text-lg italic tracking-tight">管理員預覽</span></div><button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 hover:text-white rounded-full font-bold shadow-sm transition-all flex items-center justify-center">✕</button></div><iframe src={viewingPreviewUrl} className="flex-1 w-full border-none" /></motion.div></div>
+        {editingStudent && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setEditingStudent(null)} />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-sm shadow-2xl relative z-10 border border-white/20 transition-colors">
+              <h3 className="text-xl font-black mb-6 flex items-center gap-3 text-slate-800 dark:text-slate-100"><Edit2 size={20} className="text-teal-500"/> 編輯學生姓名</h3>
+              <div className="mb-8"><input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-6 py-4 font-black text-lg outline-none focus:border-teal-500 transition-colors dark:text-white" autoFocus /></div>
+              <div className="flex gap-3"><button onClick={() => setEditingStudent(null)} className="flex-1 py-3.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors">取消</button><button onClick={handleUpdateStudent} className="flex-1 py-3.5 rounded-full font-bold bg-teal-500 text-white shadow-xl shadow-teal-500/20 active:scale-95 transition-all">儲存修改</button></div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showSyncModal && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowSyncModal(false)} /><motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border border-white/20 transition-colors"><div className="flex justify-between items-center mb-6 border-b pb-4 dark:border-slate-800"><div className="flex items-center gap-3 text-teal-600 dark:text-teal-400"><Search size={24} /><h3 className="text-xl font-black italic tracking-tight">雲端檔案管理</h3></div><button onClick={() => setShowSyncModal(false)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500">✕</button></div>{isSyncing ? <div className="py-20 text-center flex flex-col items-center gap-4"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full" /><p className="text-slate-500 font-bold animate-pulse">正在掃描雲端檔案庫...</p></div> : <div className="space-y-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2">{orphanedFiles.length === 0 ? <div className="py-20 text-center flex flex-col items-center gap-4 text-green-500"><CheckCircle size={48} /><p className="font-black text-sm px-10 italic">沒有未綁定的檔案！</p></div> : <>{orphanedFiles.map(file => <div key={file.id} className="flex justify-between items-center p-5 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border group transition-all"><div className="flex flex-col gap-1 overflow-hidden"><span className="font-black text-sm truncate dark:text-slate-200">{file.name}</span></div><button onClick={() => handleSyncDelete(file.url)} className="bg-red-50 text-red-500 p-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"><Trash2 size={16}/></button></div>)}</>}</div >}</motion.div></div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showTesterModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowTesterModal(false)} /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl relative z-10 border"><h3 className="text-xl font-black mb-4 flex items-center gap-2 text-orange-500 tracking-tight italic">< ShieldCheck /> 設定維護測試人員</h3><div className="grid grid-cols-4 sm:grid-cols-6 gap-3 mb-8 max-h-[300px] overflow-y-auto custom-scrollbar p-2">{students.map(s => <button key={s.seat_number} onClick={() => setSelectedTesters(prev => prev.includes(Number(s.seat_number)) ? prev.filter(n => n !== Number(s.seat_number)) : [...prev, Number(s.seat_number)])} className={`h-12 rounded-2xl font-black text-sm border-2 transition-all ${selectedTesters.includes(Number(s.seat_number)) ? 'bg-orange-500 text-white border-orange-500' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-transparent hover:border-slate-300'}`}>{s.seat_number}</button>)}</div><div className="flex gap-4"><button onClick={() => setShowTesterModal(false)} className="flex-1 py-4 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 transition-colors">取消</button><button onClick={() => setDoc(doc(db,"settings","maintenance"),{active:true,testers:selectedTesters}).then(() => { fetchSystemSettings(); setShowTesterModal(false); })} className="flex-1 py-4 rounded-full font-bold bg-orange-500 text-white">啟動維護</button></div></motion.div></div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {viewingPreviewUrl && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-0 md:p-6 overflow-hidden"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-lg" onClick={() => setViewingPreviewUrl(null)} /><motion.div initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} className="bg-white dark:bg-slate-900 rounded-t-[3rem] md:rounded-[3.5rem] w-full max-w-5xl h-[95vh] flex flex-col relative z-10 overflow-hidden shadow-2xl border transition-colors"><div className="p-8 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20 transition-colors"><div className="flex items-center gap-3"><div className="p-2 bg-teal-50 dark:bg-teal-500/10 rounded-xl"><BookOpen size={20} className="text-teal-600" /></div><span className="font-black text-lg italic tracking-tight">管理員預覽</span></div><button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 hover:text-white rounded-full font-bold flex items-center justify-center">✕</button></div><iframe src={viewingPreviewUrl} className="flex-1 w-full border-none" /></motion.div></div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedStudent && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/80 backdrop-blur-md" onClick={() => setSelectedStudent(null)} />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[3.5rem] p-8 md:p-10 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative z-10 border">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b dark:border-slate-800">
+                <div className="flex items-center gap-4">
+                  <img src={selectedStudent.photo_url ? `${selectedStudent.photo_url}?t=${lastFetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStudent.name}`} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-md" referrerPolicy="no-referrer" />
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{selectedStudent.seat_number} 號 {selectedStudent.name} 觀看紀錄</h3>
+                </div>
+                <button onClick={() => setSelectedStudent(null)} className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded-full font-black text-slate-500">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
+                {viewLogs.filter(l => Number(l.seat_number) === Number(selectedStudent.seat_number)).map(log => {
+                  const s = solutions.find(sol => sol.id === log.solution_id);
+                  return (
+                    <div key={log.id} className="group bg-white/70 dark:bg-slate-800/50 p-5 rounded-[2rem] flex justify-between items-center border shadow-sm">
+                      <div className="flex flex-col"><span className="font-black text-gray-700 dark:text-slate-200 text-sm">{s ? s.title : "已刪除解答"}</span><span className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{log.viewed_at?.toDate().toLocaleString()}</span></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <style jsx global>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; } .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; } .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
     </div>
   );
