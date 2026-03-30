@@ -166,3 +166,22 @@ export default function LoginPage() {
     </div>
   );
 }
+{/* 🚀 V2 修正：首頁用途說明與隱私權連結 */}
+          <div className="mt-10 pt-6 border-t border-slate-100 text-center space-y-4">
+            <div className="px-4">
+              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2">應用程式用途說明</h3>
+              <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
+                TerryEdu 是一款專為校內國二學生打造的個人化學習平台。我們透過 Google OAuth 驗證您的身分，以便提供專屬的解答共享、學習進度追蹤及筆記管理服務，確保教學資源的安全與精準投放。
+              </p>
+            </div>
+            
+            <div className="flex justify-center gap-6">
+              <a href="/privacy" className="text-[10px] font-bold text-teal-600 hover:text-teal-500 underline underline-offset-4 transition-colors">
+                隱私權政策 (Privacy Policy)
+              </a>
+              <span className="text-[10px] text-slate-300">|</span>
+              <span className="text-[10px] font-bold text-slate-400">
+                © 2026 TerryEdu
+              </span>
+            </div>
+          </div>
