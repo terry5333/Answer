@@ -6,32 +6,22 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun, AlertTriangle, ShieldCheck, Sparkles, CheckCircle2 } from "lucide-react";
+import { BookOpen, LogOut, FileText, ChevronRight, Moon, Sun, Sparkles, CheckCircle2 } from "lucide-react";
 import { useTheme } from "next-themes";
-
-const LoadingScreen = () => (
-  <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center transition-colors"><div className="relative flex items-center justify-center"><motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.6, 0.3] }} transition={{ repeat: Infinity, duration: 2 }} className="absolute w-24 h-24 bg-teal-500/20 blur-2xl rounded-full" /><div className="relative w-12 h-12"><div className="absolute inset-0 border-4 border-slate-200 dark:border-slate-800 rounded-full" /><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }} className="absolute inset-0 border-4 border-teal-500 border-t-transparent rounded-full shadow-[0_0_15px_rgba(20,184,166,0.4)]" /></div></div><div className="mt-8 py-1.5 px-5 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-white dark:border-slate-800 rounded-full"><span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.4em] italic leading-none">System Loading</span></div></div>
-);
 
 export default function DashboardPage() {
   const [solutions, setSolutions] = useState<any[]>([]);
   const [selectedSubject, setSelectedSubject] = useState("全部");
   const [userData, setUserData] = useState<any>(null);
-  
-  // 🚀 PDF 預覽與骨架屏狀態
   const [viewingPreviewUrl, setViewingPreviewUrl] = useState<string | null>(null);
   const [isIframeLoading, setIsIframeLoading] = useState(true);
-
-  // 🚀 版本控制狀態
-  const [sysVersion, setSysVersion] = useState("v1.0.0");
+  const [sysVersion, setSysVersion] = useState("v2.0.0");
   const [sysNotes, setSysNotes] = useState("");
   const [showVersionModal, setShowVersionModal] = useState(false);
-
   const [loading, setLoading] = useState(true);
   const [isVerified, setIsVerified] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [fetchTime, setFetchTime] = useState(Date.now());
-
   const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
@@ -41,50 +31,19 @@ export default function DashboardPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) { router.push("/login"); return; }
       try {
-        // 同時抓取版本更新日誌
-        const [uSnap, mSnap, vSnap] = await Promise.all([
-          getDoc(doc(db, "users", user.uid)), 
-          getDoc(doc(db, "settings", "maintenance")),
-          getDoc(doc(db, "settings", "changelog"))
-        ]);
-        
+        const [uSnap, mSnap, vSnap] = await Promise.all([getDoc(doc(db, "users", user.uid)), getDoc(doc(db, "settings", "maintenance")), getDoc(doc(db, "settings", "changelog"))]);
         if (!uSnap.exists() || !uSnap.data().seat_number) { router.push("/login"); return; }
-
-        const isT = uSnap.data().role === "teacher";
         const seat = uSnap.data().seat_number;
-        
-        if (mSnap.exists() && mSnap.data().active && !isT && !(mSnap.data().testers || []).includes(seat)) { 
-          setIsBlocked(true); setLoading(false); return; 
-        }
-
-        // 🚀 處理版本與自動彈窗
+        if (mSnap.exists() && mSnap.data().active && uSnap.data().role !== "teacher" && !(mSnap.data().testers || []).includes(seat)) { setIsBlocked(true); setLoading(false); return; }
         if (vSnap.exists()) {
-          const currentVersion = vSnap.data().version || "v1.0.0";
-          setSysVersion(currentVersion);
-          setSysNotes(vSnap.data().notes || "");
-          
-          // 檢查 localStorage 看看學生看過這版了沒
-          const lastSeenVersion = localStorage.getItem("terryEdu_version");
-          if (lastSeenVersion !== currentVersion) {
-            setShowVersionModal(true);
-            localStorage.setItem("terryEdu_version", currentVersion);
-          }
+          const currentVersion = vSnap.data().version || "v2.0.0";
+          setSysVersion(currentVersion); setSysNotes(vSnap.data().notes || "");
+          if (localStorage.getItem("terryEdu_version") !== currentVersion) { setShowVersionModal(true); localStorage.setItem("terryEdu_version", currentVersion); }
         }
-        
-        const sRef = doc(db, "students", String(seat));
-        const sSnap = await getDoc(sRef);
-        
-        let currentPhotoUrl = user.photoURL;
-        let dbPhotoUrl = sSnap.exists() ? sSnap.data().photo_url : null;
-        let originalName = sSnap.exists() ? sSnap.data().name : uSnap.data().name; 
-
-        if (sSnap.exists() && dbPhotoUrl !== currentPhotoUrl) {
-          updateDoc(sRef, { photo_url: currentPhotoUrl }); 
-          dbPhotoUrl = currentPhotoUrl;
-          setFetchTime(Date.now());
-        }
-
-        setUserData({ ...uSnap.data(), name: originalName, photo_url: dbPhotoUrl });
+        const sSnap = await getDoc(doc(db, "students", String(seat)));
+        let photo = user.photoURL;
+        if (sSnap.exists() && sSnap.data().photo_url !== photo) { await updateDoc(doc(db, "students", String(seat)), { photo_url: photo }); setFetchTime(Date.now()); }
+        setUserData({ ...uSnap.data(), name: sSnap.exists() ? sSnap.data().name : uSnap.data().name, photo_url: photo });
         const solSnap = await getDocs(collection(db, "solutions"));
         setSolutions(solSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (e) { console.error(e); }
@@ -93,120 +52,49 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [router]);
 
-  if (loading) return <LoadingScreen />;
-  if (isBlocked) return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-8 transition-colors"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-3xl p-12 rounded-[3.5rem] shadow-2xl border border-white dark:border-slate-800 text-center max-w-md w-full relative z-10"><div className="w-20 h-20 bg-orange-500 text-white rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl"><AlertTriangle size={40} /></div><h1 className="text-2xl font-black mb-4 text-slate-800 dark:text-slate-100 italic">系統維護中</h1><p className="text-slate-500 dark:text-slate-400 font-bold mb-10 text-sm">請等候開放。</p></motion.div></div>
-  );
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-950"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full" /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950/80 p-4 md:p-8 pb-20 relative overflow-hidden transition-colors">
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <motion.div animate={{ x: [0, 80, 0], y: [0, 50, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] bg-teal-100/30 dark:bg-indigo-900/20 blur-[120px] rounded-full" />
-        <motion.div animate={{ x: [0, -100, 0], y: [0, 80, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} className="absolute -bottom-[10%] -right-[10%] w-[70%] h-[70%] bg-indigo-100/30 dark:bg-teal-900/20 blur-[150px] rounded-full" />
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-8 pb-20 transition-colors overflow-x-hidden">
+      <div className="max-w-6xl mx-auto flex flex-col gap-8">
+        {/* Header：修正擠壓與名稱截斷 */}
+        <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border rounded-[2rem] p-4 sm:p-6 flex justify-between items-center shadow-xl gap-2 overflow-hidden">
+          <div className="flex items-center gap-3 shrink-0 min-w-0">
+            <div className="w-10 h-10 bg-teal-500 rounded-xl flex items-center justify-center text-white shrink-0"><BookOpen size={20} /></div>
+            <div className="flex flex-col min-w-0"><h1 className="text-lg font-black italic truncate leading-tight">TerryEdu</h1><button onClick={() => setShowVersionModal(true)} className="flex items-center gap-1 bg-teal-500/10 text-teal-600 dark:text-teal-400 px-2 py-0.5 rounded-md text-[9px] font-black w-fit mt-0.5"><Sparkles size={10} /> {sysVersion}</button></div>
+          </div>
+          <div className="flex items-center gap-2 min-w-0">
+            {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-9 h-9 shrink-0 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={14}/> : <Moon size={14}/>}</button>}
+            <div className="flex items-center gap-2 bg-slate-100/50 dark:bg-slate-800/50 p-1.5 pr-3 rounded-full border min-w-0">
+              <img src={userData?.photo_url ? `${userData.photo_url}?t=${fetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} className="w-7 h-7 rounded-full shrink-0 object-cover border border-white" referrerPolicy="no-referrer" />
+              <span className="font-black text-xs truncate max-w-[60px] sm:max-w-[120px]">{userData?.seat_number} 號 {userData?.name}</span>
+              <button onClick={() => { signOut(auth); router.push("/login"); }} className="text-slate-400 hover:text-red-500 shrink-0"><LogOut size={14} /></button>
+            </div>
+          </div>
+        </div>
+
+        {/* 🚀 V2 國二筆記系統導航 */}
+        <div className="flex flex-col gap-4">
+          <h2 className="text-xl font-black italic flex items-center gap-2 px-2"><Sparkles className="text-teal-500" /> 國二學習資源</h2>
+          <div className="flex gap-2 overflow-x-auto pb-4 px-2 no-scrollbar scroll-smooth">
+            {["全部", "國文", "數學", "理化", "公民"].map((sub) => (
+              <button key={sub} onClick={() => setSelectedSubject(sub)} className={`px-8 py-3 rounded-full font-black text-xs transition-all whitespace-nowrap shadow-md border-2 ${selectedSubject === sub ? "bg-teal-500 text-white border-teal-500 scale-105" : "bg-white/70 dark:bg-slate-900/50 border-white/50 text-slate-500"}`}>{sub}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">{solutions.filter(s => selectedSubject === "全部" || s.subject === selectedSubject).map(sol => (
+          <motion.div key={sol.id} whileHover={{ y: -8 }} onClick={() => { const target = sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : (sol.drive_file_id ? `https://drive.google.com/file/d/${sol.drive_file_id}/preview` : ""); if(target) { setIsIframeLoading(true); writeBatch(db).update(doc(db,"solutions",sol.id),{view_count:increment(1)}).set(doc(collection(db,"view_logs")),{seat_number:userData.seat_number,solution_id:sol.id,viewed_at:serverTimestamp()}).commit().then(() => setViewingPreviewUrl(target)); } }} className="group bg-white/60 dark:bg-slate-900/50 backdrop-blur-md p-10 rounded-[3.5rem] border shadow-xl cursor-pointer relative overflow-hidden transition-all"><div className="flex flex-col h-full justify-between"><div><div className="text-[10px] text-teal-600 font-black mb-4 tracking-widest bg-teal-50 dark:bg-teal-500/10 px-4 py-1.5 rounded-full w-fit">{sol.subject}</div><h3 className="font-black text-xl md:text-2xl leading-tight group-hover:text-teal-500 transition-colors">{sol.title}</h3></div><div className="flex items-center justify-between mt-12 text-slate-400 text-xs font-bold"><div className="flex items-center gap-2"><FileText size={14} /> PDF 解答</div><ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" /></div></div></motion.div>
+        ))}</div>
       </div>
 
-      {!isVerified ? (
-        <div className="min-h-[80vh] flex items-center justify-center"><div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-2xl p-12 rounded-[3.5rem] text-center shadow-2xl border border-white/50 dark:border-slate-800 max-w-sm w-full"><h1 className="text-xl font-black mb-8 text-indigo-900 dark:text-indigo-300 flex items-center justify-center gap-2"><ShieldCheck /> 安全驗證</h1><Turnstile siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!} onSuccess={() => setIsVerified(true)} /></div></div>
-      ) : (
-        <div className="max-w-6xl mx-auto flex flex-col gap-8">
-          <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white dark:border-slate-700/50 rounded-[2rem] md:rounded-[2.5rem] p-4 sm:p-6 md:p-8 flex justify-between items-center shadow-xl gap-2 md:gap-4">
-            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-              <div className="w-10 h-10 md:w-12 md:h-12 bg-teal-500 rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0"><BookOpen className="w-5 h-5 md:w-6 md:h-6" /></div>
-              <div className="flex flex-col">
-                <h1 className="text-base sm:text-lg md:text-xl font-black italic shrink-0 leading-tight">TerryEdu</h1>
-                {/* 🚀 版本號徽章 */}
-                <button onClick={() => setShowVersionModal(true)} className="flex items-center gap-1 bg-teal-500/10 text-teal-600 dark:text-teal-400 px-2 py-0.5 rounded-md text-[9px] font-black w-fit hover:bg-teal-500/20 transition-colors mt-0.5">
-                  <Sparkles size={10} /> {sysVersion}
-                </button>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 md:gap-3 min-w-0">
-              {mounted && <button onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="w-9 h-9 md:w-11 md:h-11 shrink-0 rounded-full bg-white/50 dark:bg-slate-800 border flex items-center justify-center shadow-sm">{resolvedTheme === "dark" ? <Sun size={14} className="md:w-4 md:h-4"/> : <Moon size={14} className="md:w-4 md:h-4"/>}</button>}
-              <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-100/50 dark:bg-slate-800/50 p-1 md:p-1.5 pr-3 md:pr-5 rounded-full border border-white dark:border-slate-700 transition-all min-w-0">
-                <img src={userData?.photo_url ? `${userData.photo_url}?t=${fetchTime}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData?.name}`} className="w-7 h-7 md:w-9 md:h-9 rounded-full border-2 border-white shadow-sm shrink-0 object-cover" referrerPolicy="no-referrer" />
-                <span className="font-black text-xs md:text-sm truncate max-w-[75px] sm:max-w-[150px]">{userData?.seat_number} 號 {userData?.name}</span>
-                <button onClick={() => { signOut(auth); router.push("/login"); }} className="ml-1 md:ml-2 text-slate-400 hover:text-red-500 transition-colors shrink-0"><LogOut size={14} className="md:w-[18px] md:h-[18px]" /></button>
-              </div>
-            </div>
-          </div>
+      <AnimatePresence>{showVersionModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setShowVersionModal(false)} /><motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-8 md:p-12 w-full max-w-lg shadow-2xl relative z-10 border"><div className="flex justify-center mb-6"><div className="w-16 h-16 bg-teal-100 dark:bg-teal-900/30 text-teal-500 rounded-3xl flex items-center justify-center shadow-inner"><Sparkles size={32} /></div></div><h2 className="text-2xl font-black text-center mb-2">V2 系統升級公告</h2><div className="text-center mb-8"><span className="bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-black shadow-md">{sysVersion}</span></div><div className="bg-slate-50 dark:bg-slate-800/50 rounded-3xl p-6 border space-y-4 mb-8">{sysNotes.split('\n').map((note, idx) => note.trim() && <div key={idx} className="flex items-start gap-3"><CheckCircle2 size={18} className="text-teal-500 mt-0.5 shrink-0" /><p className="text-sm font-bold text-slate-600 dark:text-slate-300">{note}</p></div>)}</div><button onClick={() => setShowVersionModal(false)} className="w-full py-4 bg-teal-500 text-white rounded-full font-black text-sm shadow-xl active:scale-95 transition-all">開始學習！</button></motion.div></div>
+      )}</AnimatePresence>
 
-          <div className="px-2"><select value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="appearance-none bg-white/70 dark:bg-slate-900/60 backdrop-blur-md border border-white dark:border-slate-700/50 rounded-full px-10 py-4 font-black shadow-lg text-sm dark:text-slate-200 min-w-[180px] hover:bg-white outline-none cursor-pointer"><option value="全部">🔍 全部科目</option>{Array.from(new Set(solutions.map(s => s.subject))).map(sub => <option key={sub} value={sub}>{sub}</option>)}</select></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">{solutions.filter(s => selectedSubject === "全部" || s.subject === selectedSubject).map(sol => (
-            <motion.div key={sol.id} whileHover={{ y: -8, scale: 1.02 }} onClick={() => { 
-              const target = sol.file_url ? sol.file_url.replace(/\/view.*/, "/preview") : (sol.drive_file_id ? `https://drive.google.com/file/d/${sol.drive_file_id}/preview` : ""); 
-              if(target) { 
-                setIsIframeLoading(true); // 🚀 每次點開解答都重置骨架屏狀態
-                writeBatch(db).update(doc(db,"solutions",sol.id),{view_count:increment(1)}).set(doc(collection(db,"view_logs")),{seat_number:userData.seat_number,solution_id:sol.id,viewed_at:serverTimestamp()}).commit().then(() => setViewingPreviewUrl(target)); 
-              } 
-            }} className="group bg-white/60 dark:bg-slate-900/50 backdrop-blur-md p-10 rounded-[3.5rem] border border-white dark:border-slate-800/50 shadow-xl hover:shadow-2xl transition-all cursor-pointer relative overflow-hidden"><div className="absolute top-0 left-0 w-2.5 h-full bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" /><div className="flex flex-col h-full justify-between"><div><div className="text-[10px] text-teal-600 dark:text-teal-400 font-black mb-4 tracking-[0.2em] uppercase bg-teal-50 dark:bg-teal-500/10 px-4 py-1.5 rounded-full w-fit">{sol.subject}</div><h3 className="font-black text-xl md:text-2xl text-slate-800 dark:text-slate-100 group-hover:text-teal-600 transition-colors leading-tight">{sol.title}</h3></div><div className="flex items-center justify-between mt-12"><div className="flex items-center gap-2 text-slate-400 font-bold text-xs"><FileText size={14} /> PDF 解答</div><div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:bg-teal-500 group-hover:text-white transition-all shadow-inner"><ChevronRight size={20} /></div></div></div></motion.div>
-          ))}</div>
-        </div>
-      )}
-
-      {/* 🚀 新增：版本更新日誌 Modal */}
-      <AnimatePresence>
-        {showVersionModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setShowVersionModal(false)} />
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-white dark:bg-slate-900 rounded-[3rem] p-8 md:p-12 w-full max-w-lg shadow-2xl relative z-10 border border-white/20 transition-colors">
-              <div className="flex justify-center mb-6">
-                <div className="w-16 h-16 bg-teal-100 dark:bg-teal-900/30 text-teal-500 rounded-3xl flex items-center justify-center shadow-inner"><Sparkles size={32} /></div>
-              </div>
-              <h2 className="text-2xl font-black text-center mb-2 text-slate-800 dark:text-slate-100">系統升級公告</h2>
-              <div className="text-center mb-8"><span className="bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-black shadow-md tracking-wider">{sysVersion}</span></div>
-              
-              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-3xl p-6 border border-slate-100 dark:border-slate-700/50 space-y-4 mb-8">
-                {sysNotes.split('\n').map((note, idx) => {
-                  if(!note.trim()) return null;
-                  return (
-                    <div key={idx} className="flex items-start gap-3">
-                      <CheckCircle2 size={18} className="text-teal-500 mt-0.5 shrink-0" />
-                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300 leading-relaxed">{note}</p>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              <button onClick={() => setShowVersionModal(false)} className="w-full py-4 bg-teal-500 hover:bg-teal-400 text-white rounded-full font-black text-sm shadow-xl shadow-teal-500/20 transition-all active:scale-95">我知道了，開始學習！</button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* 🚀 升級版：帶有智慧骨架屏的 PDF 預覽 Modal */}
-      <AnimatePresence>
-        {viewingPreviewUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-6 overflow-hidden">
-            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setViewingPreviewUrl(null)} />
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} className="bg-white dark:bg-slate-900 rounded-t-[3.5rem] md:rounded-[4rem] w-full max-w-6xl h-[96vh] md:h-[90vh] flex flex-col overflow-hidden shadow-2xl relative z-10 border border-transparent dark:border-slate-800">
-              <div className="p-6 md:p-9 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20">
-                <div className="flex items-center gap-4"><div className="p-3 bg-teal-50 dark:bg-teal-500/10 rounded-2xl"><BookOpen size={24} className="text-teal-600" /></div><span className="font-black text-lg italic">正在閱覽解答</span></div>
-                <button onClick={() => setViewingPreviewUrl(null)} className="w-12 h-12 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-red-500 hover:text-white rounded-full font-bold shadow-sm transition-all">✕</button>
-              </div>
-              
-              <div className="relative flex-1 w-full bg-slate-50 dark:bg-slate-950">
-                {/* 🚀 智慧骨架屏：在 iframe 讀取完成前顯示 */}
-                {isIframeLoading && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 z-10 bg-slate-50 dark:bg-slate-950">
-                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }} className="w-14 h-14 border-4 border-teal-500/30 border-t-teal-500 rounded-full shadow-lg" />
-                    <div className="flex flex-col items-center">
-                      <p className="text-sm font-black text-teal-600 dark:text-teal-400 tracking-widest uppercase mb-1">正在安全連線至 Google 雲端</p>
-                      <p className="text-[10px] text-slate-400 font-bold">這可能需要幾秒鐘的時間，請稍候...</p>
-                    </div>
-                  </div>
-                )}
-                <iframe 
-                  src={viewingPreviewUrl} 
-                  className="w-full h-full border-none relative z-0" 
-                  title="PDF Preview" 
-                  onLoad={() => setIsIframeLoading(false)} // 關鍵：載入完成後關閉骨架屏
-                />
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <AnimatePresence>{viewingPreviewUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4"><div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setViewingPreviewUrl(null)} /><motion.div initial={{ y: "100%" }} animate={{ y: 0 }} className="bg-white dark:bg-slate-900 rounded-t-[3rem] md:rounded-[4rem] w-full max-w-6xl h-[96vh] md:h-[92vh] flex flex-col relative z-10 overflow-hidden shadow-2xl border"><div className="p-6 md:p-9 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md"><div className="flex items-center gap-4"><BookOpen size={24} className="text-teal-600" /><span className="font-black text-lg italic">閱覽解答</span></div><button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full font-bold">✕</button></div><div className="relative flex-1 bg-slate-50 dark:bg-slate-950">{isIframeLoading && <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 z-10 bg-slate-50 dark:bg-slate-950"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" /><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">正在讀取雲端解答...</p></div>}<iframe src={viewingPreviewUrl} className="w-full h-full border-none relative z-0" onLoad={() => setIsIframeLoading(false)} /></div></motion.div></div>
+      )}</AnimatePresence>
     </div>
   );
 }
