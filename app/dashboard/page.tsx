@@ -119,19 +119,39 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* 🚀 修復破圖的 PDF 預覽 Modal */}
       <AnimatePresence>
         {viewingPreviewUrl && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-6 overflow-hidden">
             <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setViewingPreviewUrl(null)} />
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} className="bg-white dark:bg-slate-900 rounded-t-[3.5rem] md:rounded-[4rem] w-full max-w-6xl h-[96vh] md:h-[90vh] flex flex-col relative z-10 border shadow-2xl">
-              <div className="p-6 md:p-9 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20">
-                <div className="flex items-center gap-4"><BookOpen size={24} className="text-teal-600" /><span className="font-black text-lg italic">閱覽模式</span></div>
-                <button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 rounded-full font-bold">✕</button>
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 250, damping: 30 }} className="bg-white dark:bg-slate-900 rounded-t-[3.5rem] md:rounded-[4rem] w-full max-w-6xl h-[96vh] md:h-[90vh] flex flex-col relative z-10 border dark:border-slate-800 shadow-2xl overflow-hidden">
+              
+              <div className="p-5 md:p-7 flex justify-between items-center border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-teal-100 dark:bg-teal-500/20 flex items-center justify-center rounded-2xl">
+                    <BookOpen size={20} className="text-teal-600 dark:text-teal-400" />
+                  </div>
+                  <span className="font-black text-lg italic">閱覽解答</span>
+                </div>
+                <button onClick={() => setViewingPreviewUrl(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full font-bold transition-all">✕</button>
               </div>
-              <div className="relative flex-1 w-full bg-slate-50 dark:bg-slate-950">
-                {isIframeLoading && <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 z-10 bg-slate-50 dark:bg-slate-950"><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }} className="w-14 h-14 border-4 border-teal-500/30 border-t-teal-500 rounded-full" /><p className="text-xs font-black tracking-widest uppercase animate-pulse text-teal-400">載入中...</p></div>}
-                <iframe src={viewingPreviewUrl} className="w-full h-full border-none relative z-0" onLoad={() => setIsIframeLoading(false)} />
+
+              {/* 核心修正：relative flex-1 包裹 absolute inset-0 iframe */}
+              <div className="relative flex-1 w-full bg-slate-100 dark:bg-slate-950">
+                {isIframeLoading && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10 bg-slate-100 dark:bg-slate-950 pointer-events-none">
+                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-10 h-10 border-4 border-teal-500/30 border-t-teal-500 rounded-full" />
+                    <p className="text-xs font-black tracking-widest uppercase animate-pulse text-teal-500">載入中...</p>
+                  </div>
+                )}
+                <iframe 
+                  src={viewingPreviewUrl} 
+                  className="absolute inset-0 w-full h-full border-none" 
+                  onLoad={() => setIsIframeLoading(false)} 
+                  allowFullScreen
+                />
               </div>
+              
             </motion.div>
           </div>
         )}
