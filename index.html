@@ -1,0 +1,107 @@
+html_content = """<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Education | 系統全新升級通知</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 1.5rem;
+      font-family: 'Noto Sans TC', sans-serif;
+      position: relative;
+      overflow: hidden;
+    }
+    /* 背景裝飾圓形 */
+    body::before {
+      content: ''; position: absolute; width: 600px; height: 600px; background: radial-gradient(circle, rgba(167, 243, 208, 0.4) 0%, rgba(255,255,255,0) 70%); top: -200px; left: -200px; z-index: -1;
+    }
+    body::after {
+      content: ''; position: absolute; width: 500px; height: 500px; background: radial-gradient(circle, rgba(147, 197, 253, 0.3) 0%, rgba(255,255,255,0) 70%); bottom: -150px; right: -150px; z-index: -1;
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.08);
+      border-radius: 40px;
+      position: relative;
+    }
+    /* 卡片頂部漸層裝飾 */
+    .glass-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 12px;
+      background: linear-gradient(90deg, #A7F3D0 0%, #93C5FD 100%);
+      border-radius: 40px 40px 0 0;
+    }
+
+    .title-font { font-family: 'Poppins', 'Noto Sans TC', sans-serif; }
+
+    .line-btn {
+      background: linear-gradient(135deg, #06C755 0%, #05b34c 100%);
+      box-shadow: 0 10px 25px rgba(6, 199, 85, 0.25);
+      transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    .line-btn:hover {
+      box-shadow: 0 15px 35px rgba(6, 199, 85, 0.35);
+      transform: translateY(-2px);
+    }
+    .line-btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 8px 20px rgba(6, 199, 85, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="glass-card w-full max-w-xl p-10 md:p-14 text-center">
+    
+    <div class="mb-10 flex justify-center">
+      <svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="50" fill="white" fill-opacity="0.6"/>
+        <path d="M72.5 50C72.5 62.4264 62.4264 72.5 50 72.5C37.5736 72.5 27.5 62.4264 27.5 50C27.5 37.5736 37.5736 27.5 50 27.5C62.4264 27.5 72.5 37.5736 72.5 50Z" stroke="#0f172a" stroke-width="1.5"/>
+        <path d="M50 35V65M65 50H35" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M50 27.5C62.4264 27.5 72.5 37.5736 72.5 50" stroke="#06C755" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <h1 class="title-font text-4xl md:text-5xl font-black text-slate-900 tracking-tighter mb-4">
+      全新的 <span class="text-emerald-600">Smart Education</span> 
+    </h1>
+    <h2 class="text-xl md:text-2xl font-bold text-slate-800 tracking-tight mb-6">
+      智慧學習中樞，正式啟用！
+    </h2>
+    
+    <div class="h-0.5 w-16 bg-slate-200 mx-auto mb-8"></div>
+    
+    <p class="text-slate-600 font-medium leading-relaxed mb-10 text-base md:text-lg">
+      親愛的使用者，謝謝您一直以來的愛戴。<br>
+      為了提供更優質的服務品質與流暢的使用體驗，<br>
+      我們的系統已全面完成升級！
+      <span class="font-bold text-slate-800">請點擊下方按鈕，加入全新的官方帳號好友以延續您的服務。</span>
+    </p>
+    
+    <a href="https://lin.ee/TqobkF2" class="line-btn inline-flex items-center gap-3 text-white font-bold py-5 px-12 rounded-full text-lg tracking-wide shadow-lg transition">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V11H13V17ZM13 9H11V7H13V9Z" fill="white"/>
+      </svg>
+      立即加入全新 LINE 好友
+    </a>
+    
+    <div class="mt-12 pt-8 border-t border-slate-300/30 text-xs text-slate-400 font-medium">
+      Smart Education Team © 2026. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>"""
+
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(html_content)
