@@ -1,107 +1,104 @@
-html_content = """<!DOCTYPE html>
-<html lang="zh-TW">
+<!DOCTYPE html>
+<html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Education | 系統全新升級通知</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
-  <style>
-    body {
-      background: #f1f5f9;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 1.5rem;
-      font-family: 'Noto Sans TC', sans-serif;
-      position: relative;
-      overflow: hidden;
-    }
-    /* 背景裝飾圓形 */
-    body::before {
-      content: ''; position: absolute; width: 600px; height: 600px; background: radial-gradient(circle, rgba(167, 243, 208, 0.4) 0%, rgba(255,255,255,0) 70%); top: -200px; left: -200px; z-index: -1;
-    }
-    body::after {
-      content: ''; position: absolute; width: 500px; height: 500px; background: radial-gradient(circle, rgba(147, 197, 253, 0.3) 0%, rgba(255,255,255,0) 70%); bottom: -150px; right: -150px; z-index: -1;
-    }
-
-    .glass-card {
-      background: rgba(255, 255, 255, 0.55);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.7);
-      box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.08);
-      border-radius: 40px;
-      position: relative;
-    }
-    /* 卡片頂部漸層裝飾 */
-    .glass-card::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 12px;
-      background: linear-gradient(90deg, #A7F3D0 0%, #93C5FD 100%);
-      border-radius: 40px 40px 0 0;
-    }
-
-    .title-font { font-family: 'Poppins', 'Noto Sans TC', sans-serif; }
-
-    .line-btn {
-      background: linear-gradient(135deg, #06C755 0%, #05b34c 100%);
-      box-shadow: 0 10px 25px rgba(6, 199, 85, 0.25);
-      transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-    }
-    .line-btn:hover {
-      box-shadow: 0 15px 35px rgba(6, 199, 85, 0.35);
-      transform: translateY(-2px);
-    }
-    .line-btn:active {
-      transform: translateY(1px);
-      box-shadow: 0 8px 20px rgba(6, 199, 85, 0.2);
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統遷移公告 | 解答分享服務</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+        }
+        .bg-line { background-color: #06C755; }
+        .hover\:bg-line-dark:hover { background-color: #05B34C; }
+        
+        /* 浮動背景球體的動畫 */
+        @keyframes blob {
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob {
+            animation: blob 7s infinite;
+        }
+        .animation-delay-2000 {
+            animation-delay: 2s;
+        }
+        .animation-delay-4000 {
+            animation-delay: 4s;
+        }
+        
+        /* 卡片進場動畫 */
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up {
+            animation: fade-in-up 0.8s ease-out forwards;
+        }
+    </style>
 </head>
-<body>
-  <div class="glass-card w-full max-w-xl p-10 md:p-14 text-center">
-    
-    <div class="mb-10 flex justify-center">
-      <svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="50" cy="50" r="50" fill="white" fill-opacity="0.6"/>
-        <path d="M72.5 50C72.5 62.4264 62.4264 72.5 50 72.5C37.5736 72.5 27.5 62.4264 27.5 50C27.5 37.5736 37.5736 27.5 50 27.5C62.4264 27.5 72.5 37.5736 72.5 50Z" stroke="#0f172a" stroke-width="1.5"/>
-        <path d="M50 35V65M65 50H35" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/>
-        <path d="M50 27.5C62.4264 27.5 72.5 37.5736 72.5 50" stroke="#06C755" stroke-width="2.5" stroke-linecap="round"/>
-      </svg>
-    </div>
+<body class="bg-slate-50 relative min-h-screen flex items-center justify-center p-4 sm:p-8 overflow-hidden text-slate-800">
 
-    <h1 class="title-font text-4xl md:text-5xl font-black text-slate-900 tracking-tighter mb-4">
-      全新的 <span class="text-emerald-600">Smart Education</span> 
-    </h1>
-    <h2 class="text-xl md:text-2xl font-bold text-slate-800 tracking-tight mb-6">
-      智慧學習中樞，正式啟用！
-    </h2>
-    
-    <div class="h-0.5 w-16 bg-slate-200 mx-auto mb-8"></div>
-    
-    <p class="text-slate-600 font-medium leading-relaxed mb-10 text-base md:text-lg">
-      親愛的使用者，謝謝您一直以來的愛戴。<br>
-      為了提供更優質的服務品質與流暢的使用體驗，<br>
-      我們的系統已全面完成升級！
-      <span class="font-bold text-slate-800">請點擊下方按鈕，加入全新的官方帳號好友以延續您的服務。</span>
-    </p>
-    
-    <a href="https://lin.ee/TqobkF2" class="line-btn inline-flex items-center gap-3 text-white font-bold py-5 px-12 rounded-full text-lg tracking-wide shadow-lg transition">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V11H13V17ZM13 9H11V7H13V9Z" fill="white"/>
-      </svg>
-      立即加入全新 LINE 好友
-    </a>
-    
-    <div class="mt-12 pt-8 border-t border-slate-300/30 text-xs text-slate-400 font-medium">
-      Smart Education Team © 2026. All rights reserved.
-    </div>
-  </div>
+    <!-- 裝飾性背景模糊光暈 -->
+    <div class="absolute top-0 -left-4 w-72 h-72 bg-green-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+    <div class="absolute top-0 -right-4 w-72 h-72 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+    <div class="absolute -bottom-8 left-20 w-72 h-72 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
+
+    <main class="relative z-10 bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white max-w-2xl w-full p-8 sm:p-12 animate-fade-in-up">
+        
+        <div class="flex flex-col items-center mb-10">
+            <div class="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-6 shadow-sm border border-slate-200/60 text-slate-600 transform rotate-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    <line x1="9" y1="10" x2="15" y2="10"></line>
+                    <line x1="12" y1="7" x2="12" y2="13"></line>
+                </svg>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-bold text-center text-slate-900 tracking-tight">
+                服務轉移公告
+            </h1>
+        </div>
+
+        <div class="space-y-6 text-[1.05rem] leading-loose text-slate-600">
+            <p class="text-slate-800 font-medium">
+                敬愛的使用者，您好：
+            </p>
+            <p>
+                為提升服務品質與操作便利性，原「解答分享網站」之各項資料與查詢功能，自即日起已正式整併至全新的 <span class="font-semibold text-slate-800">LINE 官方帳號</span>。
+            </p>
+            <p>
+                原網頁版服務將於近期內停止營運。為確保您的使用權益不受影響，並繼續享有順暢的解答查詢服務，請您透過下方按鈕加入我們的官方帳號。
+            </p>
+            <p>
+                感謝您的配合與長久以來的支持。
+            </p>
+        </div>
+
+        <div class="mt-12 flex flex-col items-center justify-center pt-8 border-t border-slate-200/60">
+            
+            <a href="https://lin.ee/6U084sr" 
+               target="_blank" 
+               rel="noopener noreferrer" 
+               class="bg-line hover:bg-line-dark text-white font-medium text-lg py-4 px-10 rounded-2xl shadow-[0_8px_20px_rgba(6,199,85,0.25)] transition-all duration-300 ease-out transform hover:-translate-y-1 hover:shadow-[0_12px_25px_rgba(6,199,85,0.35)] flex items-center justify-center w-full sm:w-auto group">
+                <!-- LINE 官方圖示 -->
+                <svg class="w-7 h-7 mr-3 fill-current transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.122.303.04.792.016 1.008-.035.318-.216 1.285-.264 1.526-.062.308-.297 1.488 1.306.812 1.603-.676 8.653-5.111 11.022-8.312C23.633 13.917 24 12.196 24 10.304zm-15.113 2.915h-2.914c-.31 0-.562-.252-.562-.562v-4.526c0-.31.252-.562.562-.562h2.914c.31 0 .562.252.562.562v.945c0 .31-.252.562-.562.562h-1.789v.457h1.789c.31 0 .562.252.562.562v.945c0 .31-.252.562-.562.562h-1.789v.492h1.789c.31 0 .562.252.562.562v.946c0 .31-.253.562-.562.562zm3.871 0h-1.125c-.31 0-.562-.252-.562-.562v-4.526c0-.31.252-.562.562-.562h1.125c.31 0 .562.252.562.562v4.526c0 .31-.252.562-.562.562zm6.208 0h-1.109c-.212 0-.41-.115-.515-.3l-2.025-3.567v3.305c0 .31-.252.562-.562.562h-1.125c-.31 0-.562-.252-.562-.562v-4.526c0-.31.252-.562.562-.562h1.109c.212 0 .41.115.515.3l2.025 3.567v-3.305c0-.31.252-.562.562-.562h1.125c.31 0 .562.252.562.562v4.526c0 .31-.252.562-.562.562z"/>
+                </svg>
+                加入 LINE 官方帳號
+            </a>
+            
+            <a href="https://lin.ee/6U084sr" class="mt-5 text-sm text-slate-400 hover:text-slate-600 transition-colors duration-200">
+                https://lin.ee/6U084sr
+            </a>
+        </div>
+
+        <div class="mt-12 text-right">
+            <p class="text-slate-500 font-medium tracking-wide">Terry L.</p>
+        </div>
+    </main>
+
 </body>
-</html>"""
-
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(html_content)
+</html>
